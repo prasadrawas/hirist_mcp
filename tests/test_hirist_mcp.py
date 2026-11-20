@@ -24,6 +24,11 @@ class TestHiristMCP(unittest.TestCase):
         expected_tools = [
             "validate_session",
             "get_profile",
+            "get_full_profile_v2",
+            "update_personal_details",
+            "update_work_experience",
+            "update_education",
+            "update_additional_info",
             "get_key_skills",
             "update_key_skills",
             "get_cover_letter",

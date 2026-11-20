@@ -27,13 +27,18 @@ A production-ready **Model Context Protocol (MCP)** server for **[Hirist.tech](h
 
 ---
 
-## 🛠️ Complete Tools Catalog (23 Tools)
+## 🛠️ Complete Tools Catalog (28 Tools)
 
-### 1. Profile & Skills Management
+### 1. Profile & Full Lifecycle Management
 | Tool | Description |
 | :--- | :--- |
 | `validate_session` | Verify active Hirist session and retrieve candidate `seekerId`. |
 | `get_profile` | Fetch complete candidate profile schema (experience, salary, institute, resume path). |
+| `get_full_profile_v2` | Fetch multi-section structured profile: Personal (`pd`), Experience (`we`), Education (`ed`), Skills (`rd`), Additional (`ai`). |
+| `update_personal_details` | Update candidate personal & career details (designation, company, exp, CTC, notice period, location, phone, linkedin). |
+| `update_work_experience` | Add or update employment records (title, company, dates, current role, salary, description, city). |
+| `update_education` | Add or update academic history (institute, degree, start/end year, full-time/part-time, specialization). |
+| `update_additional_info` | Update profile bio/summary (`about`), GitHub URL, team handling, career break status, domain roles. |
 | `get_key_skills` | Fetch candidate key skills and tag identifiers. |
 | `update_key_skills` | Update or replace candidate skills array (e.g. Python, Flutter, Docker). |
 | `get_cover_letter` | Retrieve candidate default cover letter and application preferences. |

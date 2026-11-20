@@ -119,6 +119,41 @@ def execute_request(
 # CORE CLIENT METHODS
 # ---------------------------------------------------------------------------
 
+SCHEMA_FIELD_MAP = {
+    "pd": {
+        "picPath": "a1", "name": "a2", "gender": "a3", "dob": "a4",
+        "currentLocation": "a5", "preferredLocations": "a6", "phone": "a7",
+        "countryCode": "a8", "industry": "a9", "careerObjective": "i3",
+        "functionalArea": "b1", "noticePeriod": "b2", "expYear": "b3",
+        "expMonth": "b4", "currentCtc": "b5", "currentSalary": "h9",
+        "confidential": "b6", "expectedCtc": "b7", "expectedSalary": "i1",
+        "negotiable": "b8", "resumePath": "b9", "currentOrganization": "c2",
+        "fresher": "j6", "linkedin": "j7", "currentDesignation": "j2",
+        "skills": "s1"
+    },
+    "we": {
+        "designation": "c1", "organization": "c2", "fromExpMonth": "c3",
+        "fromExpYear": "c4", "toExpMonth": "c5", "toExpYear": "c6",
+        "isCurrent": "c7", "salary": "c8", "wantToRejoin": "g7",
+        "description": "i4", "city": "i5"
+    },
+    "ed": {
+        "institute": "c9", "degree": "d1", "courseType": "d2",
+        "batchFrom": "d3", "batchTo": "d4", "isPrimary": "d5",
+        "specialization": "j3", "description": "i6"
+    },
+    "ai": {
+        "about": "e7", "handleTeam": "f2", "github": "k2",
+        "linkedin": "h6", "facebook": "h7", "twitter": "h8",
+        "maritalStatus": "f9", "careerBreak": "g3", "roleAndResponsibility": "l5"
+    },
+    "co": {
+        "course": "d6", "institute": "d7", "fromExpYear": "e1",
+        "toExpYear": "e3", "description": "j5"
+    }
+}
+
+
 def validate_session(token: Optional[str] = None) -> Tuple[int, Dict[str, Any]]:
     """Validate current candidate session."""
     return execute_request(AUTH_VALIDATE_URL, method="GET", token=token)
@@ -127,6 +162,166 @@ def validate_session(token: Optional[str] = None) -> Tuple[int, Dict[str, Any]]:
 def get_profile(token: Optional[str] = None) -> Tuple[int, Dict[str, Any]]:
     """Fetch complete candidate profile schema."""
     return execute_request(f"{USER_BASE_URL}/profile", method="GET", token=token, params={"apply": "true"})
+
+
+def get_full_profile_v2(token: Optional[str] = None) -> Tuple[int, Dict[str, Any]]:
+    """Fetch structured multi-section profile with all sections (pd, we, ed, rd, ai, atr)."""
+    return execute_request(f"{USER_BASE_URL}/profile/v2", method="GET", token=token, params={"fields": "11111111"})
+
+
+def update_profile_section(
+    section: str,
+    payload_data: Dict[str, Any],
+    token: Optional[str] = None
+) -> Tuple[int, Dict[str, Any]]:
+    """
+    Update a profile section (pd, we, ed, ai, co) using Hirist's schema-validated mapping.
+    Automatically generates infoString with the mapped field keys.
+    """
+    field_map = SCHEMA_FIELD_MAP.get(section, {})
+    keys_present = [field_map[k] for k in payload_data if k in field_map]
+    info_string = "".join(keys_present) if keys_present else "default"
+
+    body: Dict[str, Any] = dict(payload_data)
+    body["infoString"] = info_string
+    body["requiredString"] = ""
+
+    return execute_request(
+        f"{USER_BASE_URL}/profile/v2",
+        method="POST",
+        token=token,
+        data={section: body}
+    )
+
+
+def update_personal_details(
+    name: Optional[str] = None,
+    current_designation: Optional[str] = None,
+    current_organization: Optional[str] = None,
+    exp_year: Optional[int] = None,
+    exp_month: Optional[int] = None,
+    current_ctc: Optional[str] = None,
+    expected_ctc: Optional[str] = None,
+    notice_period: Optional[Union[int, str]] = None,
+    phone: Optional[Union[int, str]] = None,
+    current_location: Optional[str] = None,
+    linkedin: Optional[str] = None,
+    career_objective: Optional[str] = None,
+    token: Optional[str] = None
+) -> Tuple[int, Dict[str, Any]]:
+    """Update candidate personal & career details."""
+    data: Dict[str, Any] = {}
+    if name is not None:
+        data["name"] = name
+    if current_designation is not None:
+        data["currentDesignation"] = current_designation
+    if current_organization is not None:
+        data["currentOrganization"] = current_organization
+    if exp_year is not None:
+        data["expYear"] = exp_year
+    if exp_month is not None:
+        data["expMonth"] = exp_month
+    if current_ctc is not None:
+        data["currentCtc"] = str(current_ctc)
+    if expected_ctc is not None:
+        data["expectedCtc"] = str(expected_ctc)
+    if notice_period is not None:
+        data["noticePeriod"] = str(notice_period)
+    if phone is not None:
+        data["phone"] = int(phone) if str(phone).isdigit() else phone
+    if current_location is not None:
+        data["currentLocation"] = str(current_location)
+    if linkedin is not None:
+        data["linkedin"] = linkedin
+    if career_objective is not None:
+        data["careerObjective"] = career_objective
+
+    return update_profile_section("pd", data, token=token)
+
+
+def update_work_experience(
+    experiences: List[Dict[str, Any]],
+    token: Optional[str] = None
+) -> Tuple[int, Dict[str, Any]]:
+    """
+    Update work experience history.
+    Each item can contain: designation, organization, fromExpMonth, fromExpYear, toExpMonth, toExpYear, isCurrent, salary, description, city.
+    """
+    field_map = SCHEMA_FIELD_MAP.get("we", {})
+    all_keys = set()
+    formatted_list = []
+    for exp in experiences:
+        for k in exp:
+            if k in field_map:
+                all_keys.add(field_map[k])
+        formatted_list.append(exp)
+
+    return execute_request(
+        f"{USER_BASE_URL}/profile/v2",
+        method="POST",
+        token=token,
+        data={
+            "we": formatted_list,
+            "infoString": "".join(sorted(all_keys)),
+            "requiredString": ""
+        }
+    )
+
+
+def update_education(
+    educations: List[Dict[str, Any]],
+    token: Optional[str] = None
+) -> Tuple[int, Dict[str, Any]]:
+    """
+    Update education history.
+    Each item can contain: institute, degree, courseType (1=Full-time, 2=Part-time, 3=Correspondence), batchFrom, batchTo, specialization, description.
+    """
+    field_map = SCHEMA_FIELD_MAP.get("ed", {})
+    all_keys = set()
+    formatted_list = []
+    for edu in educations:
+        for k in edu:
+            if k in field_map:
+                all_keys.add(field_map[k])
+        formatted_list.append(edu)
+
+    return execute_request(
+        f"{USER_BASE_URL}/profile/v2",
+        method="POST",
+        token=token,
+        data={
+            "ed": formatted_list,
+            "infoString": "".join(sorted(all_keys)),
+            "requiredString": ""
+        }
+    )
+
+
+def update_additional_info(
+    about: Optional[str] = None,
+    github: Optional[str] = None,
+    linkedin: Optional[str] = None,
+    handle_team: Optional[bool] = None,
+    career_break: Optional[bool] = None,
+    role_and_responsibility: Optional[str] = None,
+    token: Optional[str] = None
+) -> Tuple[int, Dict[str, Any]]:
+    """Update additional profile information (about summary, GitHub, team handling, role & responsibility)."""
+    data: Dict[str, Any] = {}
+    if about is not None:
+        data["about"] = about
+    if github is not None:
+        data["github"] = github
+    if linkedin is not None:
+        data["linkedin"] = linkedin
+    if handle_team is not None:
+        data["handleTeam"] = 1 if handle_team else 0
+    if career_break is not None:
+        data["careerBreak"] = 1 if career_break else 0
+    if role_and_responsibility is not None:
+        data["roleAndResponsibility"] = role_and_responsibility
+
+    return update_profile_section("ai", data, token=token)
 
 
 def get_skills(token: Optional[str] = None) -> Tuple[int, Dict[str, Any]]:

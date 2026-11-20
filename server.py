@@ -164,6 +164,145 @@ def get_profile(token: Optional[str] = None) -> Dict[str, Any]:
 
 
 @mcp.tool()
+def get_full_profile_v2(token: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Fetch comprehensive structured profile data including personal details (pd),
+    work experiences (we), educations (ed), IT skills/resume details (rd),
+    and additional profile info (ai).
+    """
+    status, res = client.get_full_profile_v2(token=token)
+    return {"status_code": status, "result": res}
+
+
+@mcp.tool()
+def update_personal_details(
+    name: Optional[str] = None,
+    current_designation: Optional[str] = None,
+    current_organization: Optional[str] = None,
+    exp_year: Optional[int] = None,
+    exp_month: Optional[int] = None,
+    current_ctc: Optional[str] = None,
+    expected_ctc: Optional[str] = None,
+    notice_period: Optional[Union[int, str]] = None,
+    phone: Optional[Union[int, str]] = None,
+    current_location: Optional[str] = None,
+    linkedin: Optional[str] = None,
+    career_objective: Optional[str] = None,
+    token: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Update candidate's personal and career details on Hirist.
+    Args:
+        name: Full name
+        current_designation: Current job title / role (e.g. 'Senior Software Engineer')
+        current_organization: Current company name
+        exp_year: Total years of professional experience
+        exp_month: Total months of experience (0-11)
+        current_ctc: Current CTC in Lakhs (e.g. '15')
+        expected_ctc: Expected CTC in Lakhs (e.g. '25')
+        notice_period: Notice period in days (e.g. 15, 30, 60, 90)
+        phone: Contact mobile number
+        current_location: Current city location ID or name
+        linkedin: LinkedIn profile URL
+        career_objective: Short summary / objective
+    """
+    status, res = client.update_personal_details(
+        name=name,
+        current_designation=current_designation,
+        current_organization=current_organization,
+        exp_year=exp_year,
+        exp_month=exp_month,
+        current_ctc=current_ctc,
+        expected_ctc=expected_ctc,
+        notice_period=notice_period,
+        phone=phone,
+        current_location=current_location,
+        linkedin=linkedin,
+        career_objective=career_objective,
+        token=token
+    )
+    return {"status_code": status, "result": res}
+
+
+@mcp.tool()
+def update_work_experience(
+    experiences: List[Dict[str, Any]],
+    token: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Update candidate's work experience history on Hirist.
+    Args:
+        experiences: List of employment records. Each dictionary accepts:
+            - designation (str): Job title
+            - organization (str): Company name
+            - fromExpMonth (int): Start month (1-12)
+            - fromExpYear (int): Start year (e.g. 2021)
+            - toExpMonth (int): End month (1-12, or 0 if current)
+            - toExpYear (int): End year (e.g. 2023, or 0 if current)
+            - isCurrent (int): 1 if currently working, 0 otherwise
+            - salary (int): Annual salary
+            - description (str): Responsibilities and achievements
+            - city (str): Job location city
+    """
+    status, res = client.update_work_experience(experiences=experiences, token=token)
+    return {"status_code": status, "result": res}
+
+
+@mcp.tool()
+def update_education(
+    educations: List[Dict[str, Any]],
+    token: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Update candidate's education history on Hirist.
+    Args:
+        educations: List of education records. Each dictionary accepts:
+            - institute (str): University, college, or school name
+            - degree (str): Degree identifier or title (e.g. '8' for B.Tech/B.E.)
+            - courseType (int): 1=Full Time, 2=Part Time, 3=Correspondence
+            - batchFrom (int): Start year (e.g. 2018)
+            - batchTo (int): Graduation year (e.g. 2021)
+            - isPrimary (int): 1 if primary highest degree, 0 otherwise
+            - specialization (str): Branch or specialization (e.g. 'Computer Science')
+            - description (str): Additional notes or academic highlights
+    """
+    status, res = client.update_education(educations=educations, token=token)
+    return {"status_code": status, "result": res}
+
+
+@mcp.tool()
+def update_additional_info(
+    about: Optional[str] = None,
+    github: Optional[str] = None,
+    linkedin: Optional[str] = None,
+    handle_team: Optional[bool] = None,
+    career_break: Optional[bool] = None,
+    role_and_responsibility: Optional[str] = None,
+    token: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Update additional profile details (About summary, GitHub URL, team handling, role & responsibility).
+    Args:
+        about: Professional profile summary / bio
+        github: GitHub profile URL
+        linkedin: LinkedIn profile URL
+        handle_team: Whether candidate has team lead / management experience
+        career_break: Whether candidate has had a career break
+        role_and_responsibility: Key domain roles & responsibilities
+    """
+    status, res = client.update_additional_info(
+        about=about,
+        github=github,
+        linkedin=linkedin,
+        handle_team=handle_team,
+        career_break=career_break,
+        role_and_responsibility=role_and_responsibility,
+        token=token
+    )
+    return {"status_code": status, "result": res}
+
+
+@mcp.tool()
 def get_key_skills(token: Optional[str] = None) -> Dict[str, Any]:
     """
     Fetch candidate's key skills list and tags from Hirist.
