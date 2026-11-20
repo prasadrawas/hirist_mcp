@@ -248,23 +248,21 @@ def update_work_experience(
     Each item can contain: designation, organization, fromExpMonth, fromExpYear, toExpMonth, toExpYear, isCurrent, salary, description, city.
     """
     field_map = SCHEMA_FIELD_MAP.get("we", {})
-    all_keys = set()
     formatted_list = []
     for exp in experiences:
-        for k in exp:
-            if k in field_map:
-                all_keys.add(field_map[k])
-        formatted_list.append(exp)
+        item = dict(exp)
+        if "status" not in item:
+            item["status"] = 1
+        item_keys = [field_map[k] for k in item if k in field_map]
+        item["infoString"] = "".join(sorted(item_keys))
+        item["requiredString"] = ""
+        formatted_list.append(item)
 
     return execute_request(
         f"{USER_BASE_URL}/profile/v2",
         method="POST",
         token=token,
-        data={
-            "we": formatted_list,
-            "infoString": "".join(sorted(all_keys)),
-            "requiredString": ""
-        }
+        data={"we": formatted_list}
     )
 
 
@@ -277,23 +275,21 @@ def update_education(
     Each item can contain: institute, degree, courseType (1=Full-time, 2=Part-time, 3=Correspondence), batchFrom, batchTo, specialization, description.
     """
     field_map = SCHEMA_FIELD_MAP.get("ed", {})
-    all_keys = set()
     formatted_list = []
     for edu in educations:
-        for k in edu:
-            if k in field_map:
-                all_keys.add(field_map[k])
-        formatted_list.append(edu)
+        item = dict(edu)
+        if "status" not in item:
+            item["status"] = 1
+        item_keys = [field_map[k] for k in item if k in field_map]
+        item["infoString"] = "".join(sorted(item_keys))
+        item["requiredString"] = ""
+        formatted_list.append(item)
 
     return execute_request(
         f"{USER_BASE_URL}/profile/v2",
         method="POST",
         token=token,
-        data={
-            "ed": formatted_list,
-            "infoString": "".join(sorted(all_keys)),
-            "requiredString": ""
-        }
+        data={"ed": formatted_list}
     )
 
 
