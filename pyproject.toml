@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hirist-mcp"
+version = "1.0.0"
+description = "Model Context Protocol (MCP) server for Hirist.tech"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [
+    {name = "Hirist MCP Team"}
+]
+keywords = ["mcp", "model-context-protocol", "hirist", "tech-jobs", "claude", "gemini", "job-search"]
+dependencies = [
+    "mcp>=1.0.0",
+    "pydantic>=2.0.0",
+    "uvicorn>=0.30.0",
+    "starlette>=0.38.0",
+    "pypdf>=4.0.0"
+]
+
+[project.scripts]
+hirist-mcp = "hirist_mcp.__main__:main"
