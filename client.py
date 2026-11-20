@@ -3,6 +3,8 @@ HTTP REST client for Hirist Microservice APIs (Gladiator Gateway).
 """
 import json
 import ssl
+import uuid
+from pathlib import Path
 import urllib.request
 import urllib.error
 import urllib.parse
@@ -14,6 +16,7 @@ GLADIATOR_BASE_URL = "https://gladiator.hirist.tech"
 AUTH_VALIDATE_URL = f"{GLADIATOR_BASE_URL}/auth/validate"
 USER_BASE_URL = f"{GLADIATOR_BASE_URL}/user"
 JOB_BASE_URL = f"{GLADIATOR_BASE_URL}/job"
+MEDIA_BASE_URL = f"{GLADIATOR_BASE_URL}/media"
 
 DEFAULT_USER_AGENT = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
@@ -135,12 +138,12 @@ SCHEMA_FIELD_MAP = {
         "designation": "c1", "organization": "c2", "fromExpMonth": "c3",
         "fromExpYear": "c4", "toExpMonth": "c5", "toExpYear": "c6",
         "isCurrent": "c7", "salary": "c8", "wantToRejoin": "g7",
-        "description": "i4", "city": "i5"
+        "status": "g6", "description": "i4", "city": "i5"
     },
     "ed": {
         "institute": "c9", "degree": "d1", "courseType": "d2",
         "batchFrom": "d3", "batchTo": "d4", "isPrimary": "d5",
-        "specialization": "j3", "description": "i6"
+        "status": "h1", "specialization": "j3", "description": "i6"
     },
     "ai": {
         "about": "e7", "handleTeam": "f2", "github": "k2",
@@ -149,7 +152,7 @@ SCHEMA_FIELD_MAP = {
     },
     "co": {
         "course": "d6", "institute": "d7", "fromExpYear": "e1",
-        "toExpYear": "e3", "description": "j5"
+        "toExpYear": "e3", "status": "h2", "description": "j5"
     }
 }
 
@@ -531,3 +534,81 @@ def suggest_institutes(query: str, token: Optional[str] = None) -> Tuple[int, Di
     """Auto-suggest colleges/universities."""
     clean_q = urllib.parse.quote(query)
     return execute_request(f"{USER_BASE_URL}/suggest/institute?astext={clean_q}&limit=50", method="GET", token=token)
+
+
+def get_resume(token: Optional[str] = None) -> Tuple[int, Dict[str, Any]]:
+    """Fetch candidate active resume S3 presigned URL and metadata."""
+    return execute_request(f"{MEDIA_BASE_URL}/files", method="GET", token=token, params={"mediaTypes": "TextResume"})
+
+
+def upload_resume(
+    file_path: str,
+    token: Optional[str] = None
+) -> Tuple[int, Dict[str, Any]]:
+    """
+    Upload candidate resume document (PDF, DOCX) to Hirist.
+    Automatically encodes file into multipart/form-data and posts to /media/files.
+    """
+    resolved_token, resolved_phpsessid = resolve_credentials(token)
+    path_obj = Path(file_path).expanduser().resolve()
+    if not path_obj.exists() or not path_obj.is_file():
+        return 400, {"error": f"Resume file not found: {file_path}", "statusCode": 400}
+
+    with open(path_obj, "rb") as f:
+        file_bytes = f.read()
+
+    boundary = f"----WebKitFormBoundary{uuid.uuid4().hex}"
+    body = bytearray()
+
+    # mediaType field
+    body.extend(f"--{boundary}\r\n".encode("latin-1"))
+    body.extend(b'Content-Disposition: form-data; name="mediaType"\r\n\r\n')
+    body.extend(b"TextResume\r\n")
+
+    # file field
+    filename = path_obj.name
+    content_type = "application/pdf" if filename.lower().endswith(".pdf") else "application/octet-stream"
+    body.extend(f"--{boundary}\r\n".encode("latin-1"))
+    body.extend(f'Content-Disposition: form-data; name="file"; filename="{filename}"\r\n'.encode("latin-1"))
+    body.extend(f"Content-Type: {content_type}\r\n\r\n".encode("latin-1"))
+    body.extend(file_bytes)
+    body.extend(b"\r\n")
+
+    # end boundary
+    body.extend(f"--{boundary}--\r\n".encode("latin-1"))
+
+    headers = {
+        "User-Agent": DEFAULT_USER_AGENT,
+        "Cookie": build_cookie_header(resolved_token, resolved_phpsessid),
+        "Origin": "https://www.hirist.tech",
+        "Referer": "https://www.hirist.tech/myprofile",
+        "Content-Type": f"multipart/form-data; boundary={boundary}",
+        "Content-Length": str(len(body)),
+    }
+
+    req = urllib.request.Request(
+        f"{MEDIA_BASE_URL}/files",
+        data=bytes(body),
+        headers=headers,
+        method="POST"
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=30, context=_SSL_CTX) as response:
+            status_code = response.status
+            res_body = response.read().decode("utf-8")
+            try:
+                res_json = json.loads(res_body)
+            except Exception:
+                res_json = {"raw": res_body}
+            return status_code, res_json
+    except urllib.error.HTTPError as e:
+        status_code = e.code
+        err_body = e.read()
+        try:
+            err_json = json.loads(err_body.decode("utf-8"))
+        except Exception:
+            err_json = {"error": err_body.decode("utf-8", errors="ignore"), "statusCode": status_code}
+        return status_code, err_json
+    except Exception as e:
+        return 500, {"error": str(e), "statusCode": 500}

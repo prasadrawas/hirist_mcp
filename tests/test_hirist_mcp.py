@@ -50,6 +50,8 @@ class TestHiristMCP(unittest.TestCase):
             "suggest_companies",
             "suggest_institutes",
             "download_resume",
+            "get_resume",
+            "upload_resume",
         ]
         for tool_name in expected_tools:
             self.assertIn(tool_name, tools, f"Missing tool: {tool_name}")

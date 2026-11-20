@@ -568,6 +568,12 @@ def download_resume(
         target_url = SESSION_STORE[sess_id].get("resume_url", "").strip()
 
     if not target_url:
+        # Check active resume media endpoint
+        st_res, res_res = client.get_resume(token=token)
+        if st_res == 200 and isinstance(res_res, dict):
+            target_url = res_res.get("data", {}).get("textResume", "")
+
+    if not target_url:
         # Fallback to candidate profile metadata
         status, profile_data = client.get_profile(token=token)
         if status == 200 and isinstance(profile_data, dict):
@@ -611,6 +617,30 @@ def download_resume(
         }
     except Exception as e:
         return {"error": f"Failed to download or parse PDF: {str(e)}", "source_url": target_url}
+
+
+@mcp.tool()
+def get_resume(token: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Fetch active resume document URL and metadata for the candidate.
+    Returns the presigned S3 URL of the active resume.
+    """
+    status, res = client.get_resume(token=token)
+    return {"status_code": status, "result": res}
+
+
+@mcp.tool()
+def upload_resume(
+    file_path: str,
+    token: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Upload a resume file (PDF or DOCX) to the candidate's Hirist account.
+    Args:
+        file_path: Absolute or relative local path to the resume document (e.g. '/path/to/resume.pdf')
+    """
+    status, res = client.upload_resume(file_path=file_path, token=token)
+    return {"status_code": status, "result": res}
 
 
 # ---------------------------------------------------------------------------
