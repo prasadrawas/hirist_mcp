@@ -1,6 +1,13 @@
 """
 Unit tests for hirist_mcp.
 """
+import sys
+from pathlib import Path
+
+workspace_dir = str(Path(__file__).resolve().parent.parent.parent)
+if workspace_dir not in sys.path:
+    sys.path.insert(0, workspace_dir)
+
 import unittest
 import base64
 from hirist_mcp.server import mcp

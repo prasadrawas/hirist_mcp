@@ -1,6 +1,13 @@
 """
 Integration tests for Starlette routes and HTTP middleware in hirist_mcp.
 """
+import sys
+from pathlib import Path
+
+workspace_dir = str(Path(__file__).resolve().parent.parent.parent)
+if workspace_dir not in sys.path:
+    sys.path.insert(0, workspace_dir)
+
 import unittest
 from starlette.testclient import TestClient
 from hirist_mcp.server import app, SESSION_STORE, current_session_token
