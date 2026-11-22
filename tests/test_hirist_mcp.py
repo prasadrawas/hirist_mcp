@@ -60,10 +60,10 @@ class TestHiristMCP(unittest.TestCase):
 
     def test_decode_jwt(self):
         header = base64.urlsafe_b64encode(b'{"alg":"HS256"}').decode().rstrip("=")
-        payload = base64.urlsafe_b64encode(b'{"id":"5552070","domain":"hirist.com","status":1}').decode().rstrip("=")
+        payload = base64.urlsafe_b64encode(b'{"id":"1234567","domain":"hirist.com","status":1}').decode().rstrip("=")
         dummy_jwt = f"{header}.{payload}.sig"
         decoded = auth.decode_jwt(dummy_jwt)
-        self.assertEqual(decoded.get("id"), "5552070")
+        self.assertEqual(decoded.get("id"), "1234567")
         self.assertEqual(decoded.get("domain"), "hirist.com")
 
     def test_build_cookie_header(self):
