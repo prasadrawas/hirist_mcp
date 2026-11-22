@@ -23,6 +23,7 @@ class TestHiristMCP(unittest.TestCase):
         tools = mcp._tool_manager._tools
         expected_tools = [
             "validate_session",
+            "refresh_session_token",
             "get_profile",
             "get_full_profile_v2",
             "update_personal_details",
@@ -37,6 +38,7 @@ class TestHiristMCP(unittest.TestCase):
             "get_job_feed",
             "search_jobs",
             "get_job_details",
+            "get_job_assessment",
             "apply_to_job",
             "save_job",
             "unsave_job",

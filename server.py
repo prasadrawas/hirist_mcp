@@ -153,6 +153,28 @@ def validate_session(token: Optional[str] = None) -> Dict[str, Any]:
 
 
 @mcp.tool()
+def refresh_session_token(
+    phpsessid: Optional[str] = None,
+    token: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Refresh and renew the Hirist access token (HIRIST_CK1) using the session cookie (PHPSESSID).
+    Automatically mints a new 30-day JWT token from Gladiator Auth.
+    """
+    new_token, psid = auth.refresh_hirist_token(phpsessid_override=phpsessid, token_override=token)
+    if new_token:
+        return {
+            "status": "success",
+            "message": "Hirist access token refreshed successfully.",
+            "token_preview": f"{new_token[:25]}...{new_token[-15:]}"
+        }
+    return {
+        "status": "error",
+        "message": "Failed to refresh token. Please check that PHPSESSID cookie is valid."
+    }
+
+
+@mcp.tool()
 def get_profile(token: Optional[str] = None) -> Dict[str, Any]:
     """
     Fetch the complete candidate profile from Hirist.
@@ -415,6 +437,17 @@ def get_job_details(job_id: Union[int, str], token: Optional[str] = None) -> Dic
         job_id: The Hirist job ID or job code (e.g. 1684278)
     """
     status, res = client.get_job_details(job_id=job_id, token=token)
+    return {"status_code": status, "result": res}
+
+
+@mcp.tool()
+def get_job_assessment(job_id: Union[int, str], token: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Fetch assessment / screening questions required for applying to a job.
+    Args:
+        job_id: The Hirist job ID
+    """
+    status, res = client.get_job_assessment(job_id=job_id, token=token)
     return {"status_code": status, "result": res}
 
 

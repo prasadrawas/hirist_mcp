@@ -134,3 +134,43 @@ def build_cookie_header(token: str, phpsessid: str = "") -> str:
     if phpsessid:
         cookies.append(f"PHPSESSID={phpsessid}")
     return "; ".join(cookies)
+
+
+def refresh_hirist_token(
+    phpsessid_override: Optional[str] = None,
+    token_override: Optional[str] = None
+) -> Tuple[str, str]:
+    """
+    Query Hirist central auth service with PHPSESSID and existing token to mint a fresh HIRIST_CK1 token.
+    Caches the minted token for non-blocking multi-tenant reuse.
+    """
+    import ssl
+    import urllib.request
+    token, phpsessid = resolve_credentials(token_override, phpsessid_override)
+    if not phpsessid:
+        return "", ""
+
+    url = "https://gladiator.hirist.tech/auth/refresh"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        "Cookie": build_cookie_header(token, phpsessid),
+        "Origin": "https://www.hirist.tech",
+        "Referer": "https://www.hirist.tech/"
+    }
+
+    req = urllib.request.Request(url, headers=headers, method="GET")
+    try:
+        with urllib.request.urlopen(req, timeout=15, context=ssl.create_default_context()) as resp:
+            if resp.status == 200:
+                body = json.loads(resp.read().decode("utf-8"))
+                new_token = body.get("token", "")
+                if new_token:
+                    current_session_token.set(new_token)
+                    os.environ["HIRIST_CK1"] = new_token
+                    sess_id = current_session_id.get()
+                    if sess_id and sess_id in SESSION_STORE:
+                        SESSION_STORE[sess_id]["token"] = new_token
+                    return new_token, phpsessid
+    except Exception:
+        pass
+    return "", ""

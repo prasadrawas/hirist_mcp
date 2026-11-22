@@ -10,7 +10,7 @@ import urllib.error
 import urllib.parse
 from typing import Tuple, Dict, Any, Optional, List, Union
 
-from hirist_mcp.auth import build_cookie_header, resolve_credentials
+from hirist_mcp.auth import build_cookie_header, resolve_credentials, refresh_hirist_token
 
 GLADIATOR_BASE_URL = "https://gladiator.hirist.tech"
 AUTH_VALIDATE_URL = f"{GLADIATOR_BASE_URL}/auth/validate"
@@ -60,10 +60,12 @@ def execute_request(
     params: Optional[Dict[str, Any]] = None,
     content_type: Optional[str] = None,
     extra_headers: Optional[Dict[str, str]] = None,
-    timeout: int = 15
+    timeout: int = 15,
+    auto_refresh: bool = True
 ) -> Tuple[int, Dict[str, Any]]:
     """
     Execute an HTTP request against Hirist API and return (status_code, json_body).
+    Automatically retries once on 401 or 406 by auto-refreshing HIRIST_CK1 via Gladiator Auth.
     """
     resolved_token, resolved_phpsessid = resolve_credentials(token, phpsessid)
 
@@ -113,6 +115,24 @@ def execute_request(
             err_json = json.loads(err_body.decode("utf-8"))
         except Exception:
             err_json = {"error": err_body.decode("utf-8", errors="ignore"), "statusCode": status_code}
+
+        # Auto-refresh session token on 401 or 406 (expired JWT)
+        if auto_refresh and status_code in (401, 406) and "/auth/refresh" not in url:
+            new_token, _ = refresh_hirist_token(phpsessid_override=resolved_phpsessid)
+            if new_token:
+                return execute_request(
+                    url=url,
+                    method=method,
+                    token=new_token,
+                    phpsessid=resolved_phpsessid,
+                    data=data,
+                    params=params,
+                    content_type=content_type,
+                    extra_headers=extra_headers,
+                    timeout=timeout,
+                    auto_refresh=False
+                )
+
         return status_code, err_json
     except Exception as e:
         return 500, {"error": str(e), "statusCode": 500}
@@ -426,22 +446,62 @@ def get_job_details(job_id: Union[int, str], token: Optional[str] = None) -> Tup
     )
 
 
+def get_job_assessment(job_id: Union[int, str], token: Optional[str] = None) -> Tuple[int, Dict[str, Any]]:
+    """Fetch assessment / screening questions for a job."""
+    return execute_request(
+        f"{JOB_BASE_URL}/assessment",
+        method="GET",
+        token=token,
+        params={"jobcode": str(job_id)}
+    )
+
+
 def apply_to_job(
     job_id: Union[int, str],
     coverletter: Optional[str] = None,
     token: Optional[str] = None
 ) -> Tuple[int, Dict[str, Any]]:
-    """Apply to a job on Hirist."""
+    """
+    Apply to a job on Hirist.
+    Handles direct application, already-applied state, and screening assessment requirements.
+    """
     payload: Dict[str, Any] = {}
     if coverletter is not None:
         payload["coverletter"] = coverletter
-    return execute_request(
+    status, res = execute_request(
         f"{JOB_BASE_URL}/apply",
         method="POST",
         token=token,
         params={"jobcode": str(job_id)},
         data=payload
     )
+
+    if status == 200:
+        return status, {
+            "status": "applied",
+            "job_id": job_id,
+            "message": "Successfully Applied to Job",
+            "details": res
+        }
+
+    err = res.get("error", {}) if isinstance(res, dict) else {}
+    err_name = err.get("name", "") if isinstance(err, dict) else ""
+    if err_name == "JOB_ALREADY_APPLIED" or "already applied" in str(res).lower():
+        return 200, {
+            "status": "already_applied",
+            "job_id": job_id,
+            "message": "Job is already applied",
+            "details": res
+        }
+    if err_name == "ASSESSMENT_REQUIRED":
+        return 400, {
+            "status": "assessment_required",
+            "job_id": job_id,
+            "message": "Assessment/screening questions required. Use get_job_assessment to inspect questions.",
+            "details": res
+        }
+
+    return status, res
 
 
 def save_job(job_id: Union[int, str], token: Optional[str] = None) -> Tuple[int, Dict[str, Any]]:
