@@ -38,11 +38,15 @@ class TestHiristMCP(unittest.TestCase):
             "get_job_feed",
             "search_jobs",
             "get_job_details",
+            "batch_get_job_details",
             "get_job_assessment",
             "apply_to_job",
+            "batch_apply_jobs",
             "save_job",
+            "batch_save_jobs",
             "unsave_job",
             "do_follow_up",
+            "batch_follow_up",
             "get_applied_job_count",
             "get_pending_jobs_count",
             "get_user_settings",
@@ -71,6 +75,25 @@ class TestHiristMCP(unittest.TestCase):
         self.assertIn("HIRIST_CK1=my_token", header)
         self.assertIn("hirist_seeker_enc=my_token", header)
         self.assertIn("PHPSESSID=sess123", header)
+
+    def test_ttl_cache(self):
+        from hirist_mcp.cache import TTLCache
+        cache = TTLCache(default_ttl=10, max_size=5)
+        cache.set("key1", "val1")
+        self.assertEqual(cache.get("key1"), "val1")
+
+        # Expiration test
+        cache.set("short_key", "short_val", ttl=-1)
+        self.assertIsNone(cache.get("short_key"))
+
+        # Invalidation test
+        cache.set("prefix_a", "val_a")
+        cache.set("prefix_b", "val_b")
+        cache.set("other", "val_other")
+        cache.invalidate("prefix_")
+        self.assertIsNone(cache.get("prefix_a"))
+        self.assertIsNone(cache.get("prefix_b"))
+        self.assertEqual(cache.get("other"), "val_other")
 
 
 if __name__ == "__main__":

@@ -27,9 +27,17 @@ A production-ready **Model Context Protocol (MCP)** server for **[Hirist.tech](h
 
 ---
 
-## 🛠️ Complete Tools Catalog (32 Tools)
+## 🛠️ Complete Tools Catalog (36 Tools)
 
-### 1. Profile & Full Lifecycle Management
+### 1. High-Performance Batch Operations (Solves UI Permission Queuing & Timeouts)
+| Tool | Description |
+| :--- | :--- |
+| `batch_apply_jobs` | Apply to multiple jobs in a single call with safe 200ms spacing. Solves Gemini Web modal queuing by requiring only **one** approval. |
+| `batch_get_job_details` | Inspect descriptions, skills, and recruiters for multiple jobs in one operation with in-memory caching. |
+| `batch_save_jobs` | Bookmark multiple jobs in a single batch. |
+| `batch_follow_up` | Send recruiter follow-up nudges for multiple applied jobs in one operation. |
+
+### 2. Profile & Full Lifecycle Management
 | Tool | Description |
 | :--- | :--- |
 | `validate_session` | Verify active Hirist session and retrieve candidate `seekerId`. |

@@ -7,6 +7,7 @@ import sys
 import json
 import base64
 import time
+import threading
 import contextvars
 from pathlib import Path
 from typing import Tuple, Optional, Dict, Any
@@ -136,41 +137,55 @@ def build_cookie_header(token: str, phpsessid: str = "") -> str:
     return "; ".join(cookies)
 
 
+# Global lock and debounce timestamp to prevent 401 stampedes during parallel tool calls
+REFRESH_LOCK = threading.Lock()
+LAST_REFRESH_TIMESTAMP = 0.0
+
+
 def refresh_hirist_token(
     phpsessid_override: Optional[str] = None,
     token_override: Optional[str] = None
 ) -> Tuple[str, str]:
     """
     Query Hirist central auth service with PHPSESSID and existing token to mint a fresh HIRIST_CK1 token.
-    Caches the minted token for non-blocking multi-tenant reuse.
+    Uses a mutex lock and 5s debouncing to prevent thundering herd / 401 stampedes across concurrent requests.
     """
-    import ssl
-    import urllib.request
+    global LAST_REFRESH_TIMESTAMP
     token, phpsessid = resolve_credentials(token_override, phpsessid_override)
     if not phpsessid:
         return "", ""
 
-    url = "https://gladiator.hirist.tech/auth/refresh"
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-        "Cookie": build_cookie_header(token, phpsessid),
-        "Origin": "https://www.hirist.tech",
-        "Referer": "https://www.hirist.tech/"
-    }
+    with REFRESH_LOCK:
+        # Debounce: if refreshed within last 5 seconds, return current active credentials
+        now = time.time()
+        if now - LAST_REFRESH_TIMESTAMP < 5.0:
+            latest_token, latest_phpsessid = resolve_credentials(token_override, phpsessid_override)
+            if latest_token:
+                return latest_token, latest_phpsessid
 
-    req = urllib.request.Request(url, headers=headers, method="GET")
-    try:
-        with urllib.request.urlopen(req, timeout=15, context=ssl.create_default_context()) as resp:
-            if resp.status == 200:
-                body = json.loads(resp.read().decode("utf-8"))
-                new_token = body.get("token", "")
-                if new_token:
-                    current_session_token.set(new_token)
-                    os.environ["HIRIST_CK1"] = new_token
-                    sess_id = current_session_id.get()
-                    if sess_id and sess_id in SESSION_STORE:
-                        SESSION_STORE[sess_id]["token"] = new_token
-                    return new_token, phpsessid
-    except Exception:
-        pass
-    return "", ""
+        url = "https://gladiator.hirist.tech/auth/refresh"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+            "Cookie": build_cookie_header(token, phpsessid),
+            "Origin": "https://www.hirist.tech",
+            "Referer": "https://www.hirist.tech/"
+        }
+
+        try:
+            import httpx
+            with httpx.Client(timeout=httpx.Timeout(5.0, connect=3.0)) as c:
+                resp = c.get(url, headers=headers)
+                if resp.status_code == 200:
+                    body = resp.json()
+                    new_token = body.get("token", "")
+                    if new_token:
+                        LAST_REFRESH_TIMESTAMP = time.time()
+                        current_session_token.set(new_token)
+                        os.environ["HIRIST_CK1"] = new_token
+                        sess_id = current_session_id.get()
+                        if sess_id and sess_id in SESSION_STORE:
+                            SESSION_STORE[sess_id]["token"] = new_token
+                        return new_token, phpsessid
+        except Exception:
+            pass
+        return "", ""

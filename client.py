@@ -2,15 +2,17 @@
 HTTP REST client for Hirist Microservice APIs (Gladiator Gateway).
 """
 import json
-import ssl
+import time
 import uuid
+import threading
 from pathlib import Path
-import urllib.request
-import urllib.error
 import urllib.parse
 from typing import Tuple, Dict, Any, Optional, List, Union
 
+import httpx
+
 from hirist_mcp.auth import build_cookie_header, resolve_credentials, refresh_hirist_token
+from hirist_mcp.cache import CACHE
 
 GLADIATOR_BASE_URL = "https://gladiator.hirist.tech"
 AUTH_VALIDATE_URL = f"{GLADIATOR_BASE_URL}/auth/validate"
@@ -23,8 +25,16 @@ DEFAULT_USER_AGENT = (
     "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 )
 
-# Standard SSL context
-_SSL_CTX = ssl.create_default_context()
+# Concurrency limiter: Allow max 4 simultaneous requests to upstream Hirist API
+CONCURRENCY_SEMAPHORE = threading.Semaphore(4)
+
+# Persistent HTTP Client with Connection Pooling & Keep-Alive
+# Connect timeout 3.0s, read timeout 6.5s to respond before Gemini Web's 8-10s cutoff
+_HTTP_CLIENT = httpx.Client(
+    timeout=httpx.Timeout(connect=3.0, read=6.5, write=6.5, pool=6.5),
+    limits=httpx.Limits(max_connections=25, max_keepalive_connections=15, keepalive_expiry=30.0),
+    follow_redirects=True
+)
 
 
 def get_headers(
@@ -60,20 +70,19 @@ def execute_request(
     params: Optional[Dict[str, Any]] = None,
     content_type: Optional[str] = None,
     extra_headers: Optional[Dict[str, str]] = None,
-    timeout: int = 15,
+    timeout: float = 6.5,
     auto_refresh: bool = True
 ) -> Tuple[int, Dict[str, Any]]:
     """
     Execute an HTTP request against Hirist API and return (status_code, json_body).
-    Automatically retries once on 401 or 406 by auto-refreshing HIRIST_CK1 via Gladiator Auth.
+    Uses persistent connection pooling, capped timeouts (6.5s) to avoid client drops,
+    and automatically retries once on 401 or 406 by auto-refreshing HIRIST_CK1 via Gladiator Auth.
     """
     resolved_token, resolved_phpsessid = resolve_credentials(token, phpsessid)
 
+    clean_params = None
     if params:
         clean_params = {k: v for k, v in params.items() if v is not None}
-        encoded_params = urllib.parse.urlencode(clean_params)
-        sep = "&" if "?" in url else "?"
-        url = f"{url}{sep}{encoded_params}"
 
     body_bytes = None
     default_content_type = content_type
@@ -97,43 +106,49 @@ def execute_request(
         extra_headers=extra_headers
     )
 
-    req = urllib.request.Request(url, data=body_bytes, headers=headers, method=method)
-
     try:
-        with urllib.request.urlopen(req, context=_SSL_CTX, timeout=timeout) as resp:
-            status_code = resp.status
-            raw_response = resp.read()
+        with CONCURRENCY_SEMAPHORE:
+            resp = _HTTP_CLIENT.request(
+                method=method,
+                url=url,
+                params=clean_params,
+                content=body_bytes,
+                headers=headers,
+                timeout=timeout
+            )
+            status_code = resp.status_code
             try:
-                json_data = json.loads(raw_response.decode("utf-8"))
+                json_data = resp.json()
             except Exception:
-                json_data = {"raw": raw_response.decode("utf-8", errors="ignore")}
+                json_data = {"raw": resp.text}
+
+            # Auto-refresh session token on 401 or 406 (expired JWT)
+            if auto_refresh and status_code in (401, 406) and "/auth/refresh" not in url:
+                new_token, _ = refresh_hirist_token(phpsessid_override=resolved_phpsessid)
+                if new_token:
+                    return execute_request(
+                        url=url,
+                        method=method,
+                        token=new_token,
+                        phpsessid=resolved_phpsessid,
+                        data=data,
+                        params=params,
+                        content_type=content_type,
+                        extra_headers=extra_headers,
+                        timeout=timeout,
+                        auto_refresh=False
+                    )
+
             return status_code, json_data
-    except urllib.error.HTTPError as e:
-        status_code = e.code
-        err_body = e.read()
-        try:
-            err_json = json.loads(err_body.decode("utf-8"))
-        except Exception:
-            err_json = {"error": err_body.decode("utf-8", errors="ignore"), "statusCode": status_code}
 
-        # Auto-refresh session token on 401 or 406 (expired JWT)
-        if auto_refresh and status_code in (401, 406) and "/auth/refresh" not in url:
-            new_token, _ = refresh_hirist_token(phpsessid_override=resolved_phpsessid)
-            if new_token:
-                return execute_request(
-                    url=url,
-                    method=method,
-                    token=new_token,
-                    phpsessid=resolved_phpsessid,
-                    data=data,
-                    params=params,
-                    content_type=content_type,
-                    extra_headers=extra_headers,
-                    timeout=timeout,
-                    auto_refresh=False
-                )
-
-        return status_code, err_json
+    except httpx.TimeoutException:
+        return 504, {
+            "status": "timeout",
+            "error": f"Upstream request to Hirist timed out after {timeout}s. Please retry or run actions sequentially.",
+            "statusCode": 504
+        }
+    except httpx.HTTPError as e:
+        return 502, {"error": f"Upstream HTTP error: {str(e)}", "statusCode": 502}
     except Exception as e:
         return 500, {"error": str(e), "statusCode": 500}
 
@@ -183,13 +198,31 @@ def validate_session(token: Optional[str] = None) -> Tuple[int, Dict[str, Any]]:
 
 
 def get_profile(token: Optional[str] = None) -> Tuple[int, Dict[str, Any]]:
-    """Fetch complete candidate profile schema."""
-    return execute_request(f"{USER_BASE_URL}/profile", method="GET", token=token, params={"apply": "true"})
+    """Fetch complete candidate profile schema (cached in memory for 60s)."""
+    resolved_token, _ = resolve_credentials(token)
+    cache_key = f"profile:{resolved_token[-16:] if resolved_token else 'default'}"
+    cached = CACHE.get(cache_key)
+    if cached is not None:
+        return 200, cached
+
+    status, res = execute_request(f"{USER_BASE_URL}/profile", method="GET", token=token, params={"apply": "true"})
+    if status == 200:
+        CACHE.set(cache_key, res, ttl=60)
+    return status, res
 
 
 def get_full_profile_v2(token: Optional[str] = None) -> Tuple[int, Dict[str, Any]]:
-    """Fetch structured multi-section profile with all sections (pd, we, ed, rd, ai, atr)."""
-    return execute_request(f"{USER_BASE_URL}/profile/v2", method="GET", token=token, params={"fields": "11111111"})
+    """Fetch structured multi-section profile with all sections (pd, we, ed, rd, ai, atr) (cached for 60s)."""
+    resolved_token, _ = resolve_credentials(token)
+    cache_key = f"profile_v2:{resolved_token[-16:] if resolved_token else 'default'}"
+    cached = CACHE.get(cache_key)
+    if cached is not None:
+        return 200, cached
+
+    status, res = execute_request(f"{USER_BASE_URL}/profile/v2", method="GET", token=token, params={"fields": "11111111"})
+    if status == 200:
+        CACHE.set(cache_key, res, ttl=60)
+    return status, res
 
 
 def update_profile_section(
@@ -200,6 +233,7 @@ def update_profile_section(
     """
     Update a profile section (pd, we, ed, ai, co) using Hirist's schema-validated mapping.
     Automatically generates infoString with the mapped field keys.
+    Invalidates profile and skills cache upon successful update.
     """
     field_map = SCHEMA_FIELD_MAP.get(section, {})
     keys_present = [field_map[k] for k in payload_data if k in field_map]
@@ -209,12 +243,16 @@ def update_profile_section(
     body["infoString"] = info_string
     body["requiredString"] = ""
 
-    return execute_request(
+    status, res = execute_request(
         f"{USER_BASE_URL}/profile/v2",
         method="POST",
         token=token,
         data={section: body}
     )
+    if status == 200:
+        CACHE.invalidate("profile")
+        CACHE.invalidate("skills")
+    return status, res
 
 
 def update_personal_details(
@@ -344,13 +382,26 @@ def update_additional_info(
 
 
 def get_skills(token: Optional[str] = None) -> Tuple[int, Dict[str, Any]]:
-    """Fetch candidate key skills list."""
-    return execute_request(f"{USER_BASE_URL}/skills", method="GET", token=token)
+    """Fetch candidate key skills list (cached for 60s)."""
+    resolved_token, _ = resolve_credentials(token)
+    cache_key = f"skills:{resolved_token[-16:] if resolved_token else 'default'}"
+    cached = CACHE.get(cache_key)
+    if cached is not None:
+        return 200, cached
+
+    status, res = execute_request(f"{USER_BASE_URL}/skills", method="GET", token=token)
+    if status == 200:
+        CACHE.set(cache_key, res, ttl=60)
+    return status, res
 
 
 def update_skills(skills: List[str], token: Optional[str] = None) -> Tuple[int, Dict[str, Any]]:
-    """Update candidate skills array."""
-    return execute_request(f"{USER_BASE_URL}/skills", method="POST", token=token, data={"skills": skills})
+    """Update candidate skills array. Invalidates cached skills and profile."""
+    status, res = execute_request(f"{USER_BASE_URL}/skills", method="POST", token=token, data={"skills": skills})
+    if status == 200:
+        CACHE.invalidate("skills")
+        CACHE.invalidate("profile")
+    return status, res
 
 
 def get_cover_letter(token: Optional[str] = None) -> Tuple[int, Dict[str, Any]]:
@@ -437,23 +488,39 @@ def search_jobs(
 
 
 def get_job_details(job_id: Union[int, str], token: Optional[str] = None) -> Tuple[int, Dict[str, Any]]:
-    """Fetch comprehensive details for a specific job."""
-    return execute_request(
+    """Fetch comprehensive details for a specific job (cached for 15 minutes)."""
+    cache_key = f"job_details:{job_id}"
+    cached = CACHE.get(cache_key)
+    if cached is not None:
+        return 200, cached
+
+    status, res = execute_request(
         f"{JOB_BASE_URL}/detail",
         method="GET",
         token=token,
         params={"jobcode": str(job_id)}
     )
+    if status == 200:
+        CACHE.set(cache_key, res, ttl=900)  # 15 minutes
+    return status, res
 
 
 def get_job_assessment(job_id: Union[int, str], token: Optional[str] = None) -> Tuple[int, Dict[str, Any]]:
-    """Fetch assessment / screening questions for a job."""
-    return execute_request(
+    """Fetch assessment / screening questions for a job (cached for 30 minutes)."""
+    cache_key = f"job_assessment:{job_id}"
+    cached = CACHE.get(cache_key)
+    if cached is not None:
+        return 200, cached
+
+    status, res = execute_request(
         f"{JOB_BASE_URL}/assessment",
         method="GET",
         token=token,
         params={"jobcode": str(job_id)}
     )
+    if status == 200:
+        CACHE.set(cache_key, res, ttl=1800)  # 30 minutes
+    return status, res
 
 
 def apply_to_job(
@@ -585,15 +652,33 @@ def block_or_unblock_company(
 
 
 def suggest_companies(query: str, token: Optional[str] = None) -> Tuple[int, Dict[str, Any]]:
-    """Auto-suggest companies by name."""
+    """Auto-suggest companies by name (cached for 1 hour)."""
+    q_norm = query.lower().strip()
+    cache_key = f"suggest_co:{q_norm}"
+    cached = CACHE.get(cache_key)
+    if cached is not None:
+        return 200, cached
+
     clean_q = urllib.parse.quote(query).replace("%20", "%2520")
-    return execute_request(f"{USER_BASE_URL}/company/autosuggest?name={clean_q}", method="GET", token=token)
+    status, res = execute_request(f"{USER_BASE_URL}/company/autosuggest?name={clean_q}", method="GET", token=token)
+    if status == 200:
+        CACHE.set(cache_key, res, ttl=3600)
+    return status, res
 
 
 def suggest_institutes(query: str, token: Optional[str] = None) -> Tuple[int, Dict[str, Any]]:
-    """Auto-suggest colleges/universities."""
+    """Auto-suggest colleges/universities (cached for 1 hour)."""
+    q_norm = query.lower().strip()
+    cache_key = f"suggest_inst:{q_norm}"
+    cached = CACHE.get(cache_key)
+    if cached is not None:
+        return 200, cached
+
     clean_q = urllib.parse.quote(query)
-    return execute_request(f"{USER_BASE_URL}/suggest/institute?astext={clean_q}&limit=50", method="GET", token=token)
+    status, res = execute_request(f"{USER_BASE_URL}/suggest/institute?astext={clean_q}&limit=50", method="GET", token=token)
+    if status == 200:
+        CACHE.set(cache_key, res, ttl=3600)
+    return status, res
 
 
 def get_resume(token: Optional[str] = None) -> Tuple[int, Dict[str, Any]]:
@@ -646,29 +731,130 @@ def upload_resume(
         "Content-Length": str(len(body)),
     }
 
-    req = urllib.request.Request(
-        f"{MEDIA_BASE_URL}/files",
-        data=bytes(body),
-        headers=headers,
-        method="POST"
-    )
-
     try:
-        with urllib.request.urlopen(req, timeout=30, context=_SSL_CTX) as response:
-            status_code = response.status
-            res_body = response.read().decode("utf-8")
-            try:
-                res_json = json.loads(res_body)
-            except Exception:
-                res_json = {"raw": res_body}
-            return status_code, res_json
-    except urllib.error.HTTPError as e:
-        status_code = e.code
-        err_body = e.read()
+        resp = _HTTP_CLIENT.post(
+            f"{MEDIA_BASE_URL}/files",
+            content=bytes(body),
+            headers=headers,
+            timeout=25.0
+        )
+        status_code = resp.status_code
         try:
-            err_json = json.loads(err_body.decode("utf-8"))
+            res_json = resp.json()
         except Exception:
-            err_json = {"error": err_body.decode("utf-8", errors="ignore"), "statusCode": status_code}
-        return status_code, err_json
+            res_json = {"raw": resp.text}
+        return status_code, res_json
+    except httpx.TimeoutException:
+        return 504, {"error": "Upload timed out after 25s", "statusCode": 504}
     except Exception as e:
         return 500, {"error": str(e), "statusCode": 500}
+
+
+# ---------------------------------------------------------------------------
+# BATCH OPERATION METHODS (Mitigate Rate Limits & UI Permission Queuing)
+# ---------------------------------------------------------------------------
+
+def batch_apply_jobs(
+    job_ids: List[Union[int, str]],
+    coverletter: Optional[str] = None,
+    token: Optional[str] = None
+) -> Tuple[int, Dict[str, Any]]:
+    """
+    Apply to multiple jobs sequentially with safe spacing (200ms) to avoid throttling.
+    Returns consolidated status report to resolve in a single MCP tool call.
+    """
+    results: Dict[str, Any] = {
+        "total": len(job_ids),
+        "applied": [],
+        "already_applied": [],
+        "assessment_required": [],
+        "failed": []
+    }
+    for idx, jid in enumerate(job_ids):
+        if idx > 0:
+            time.sleep(0.2)
+        code, res = apply_to_job(job_id=jid, coverletter=coverletter, token=token)
+        status = res.get("status", "") if isinstance(res, dict) else ""
+        if status == "applied":
+            results["applied"].append({
+                "job_id": jid,
+                "message": res.get("message", "Successfully applied"),
+                "details": res.get("details", {})
+            })
+        elif status == "already_applied":
+            results["already_applied"].append({
+                "job_id": jid,
+                "message": res.get("message", "Job already applied")
+            })
+        elif status == "assessment_required":
+            results["assessment_required"].append({
+                "job_id": jid,
+                "message": res.get("message", "Assessment required"),
+                "requires_assessment": True
+            })
+        else:
+            results["failed"].append({
+                "job_id": jid,
+                "status_code": code,
+                "error": res.get("error") if isinstance(res, dict) else str(res)
+            })
+    return 200, results
+
+
+def batch_get_job_details(
+    job_ids: List[Union[int, str]],
+    token: Optional[str] = None
+) -> Tuple[int, Dict[str, Any]]:
+    """
+    Fetch details for multiple jobs in a single call using cache and sequential requests.
+    """
+    jobs = []
+    for idx, jid in enumerate(job_ids):
+        if idx > 0:
+            time.sleep(0.08)
+        code, res = get_job_details(job_id=jid, token=token)
+        if code == 200:
+            jobs.append({"job_id": jid, "status": "success", "details": res})
+        else:
+            jobs.append({"job_id": jid, "status": "failed", "status_code": code, "error": res})
+    return 200, {"total": len(job_ids), "jobs": jobs}
+
+
+def batch_save_jobs(
+    job_ids: List[Union[int, str]],
+    token: Optional[str] = None
+) -> Tuple[int, Dict[str, Any]]:
+    """
+    Bookmark/save multiple jobs on Hirist in a single batch.
+    """
+    saved = []
+    failed = []
+    for idx, jid in enumerate(job_ids):
+        if idx > 0:
+            time.sleep(0.1)
+        code, res = save_job(job_id=jid, token=token)
+        if code == 200:
+            saved.append(jid)
+        else:
+            failed.append({"job_id": jid, "status_code": code, "error": res})
+    return 200, {"total": len(job_ids), "saved": saved, "failed": failed}
+
+
+def batch_follow_up(
+    job_ids: List[Union[int, str]],
+    token: Optional[str] = None
+) -> Tuple[int, Dict[str, Any]]:
+    """
+    Send recruiter follow-up nudges for multiple applied jobs in one operation.
+    """
+    followed_up = []
+    failed = []
+    for idx, jid in enumerate(job_ids):
+        if idx > 0:
+            time.sleep(0.15)
+        code, res = do_follow_up(job_id=jid, token=token)
+        if code == 200:
+            followed_up.append(jid)
+        else:
+            failed.append({"job_id": jid, "status_code": code, "error": res})
+    return 200, {"total": len(job_ids), "followed_up": followed_up, "failed": failed}

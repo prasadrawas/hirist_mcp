@@ -26,13 +26,19 @@ from hirist_mcp.auth import (
     current_session_resume_url,
 )
 
-# Initialize the FastMCP server
+# Initialize the FastMCP server with performance and concurrency instructions
 mcp = FastMCP(
     "hirist-mcp",
     instructions=(
         "Hirist MCP Server: Manage Hirist candidate profile, update key skills, "
         "search tech jobs, inspect job descriptions, submit applications, bookmark jobs, "
-        "nudge recruiters via follow-ups, and optimize recruiter search visibility via activity pulse."
+        "nudge recruiters via follow-ups, and optimize recruiter search visibility.\n\n"
+        "PERFORMANCE & CONCURRENCY GUIDELINES FOR LLMs:\n"
+        "1. When applying to multiple jobs, ALWAYS invoke `batch_apply_jobs` instead of calling `apply_to_job` in parallel.\n"
+        "2. When inspecting details for multiple jobs, ALWAYS invoke `batch_get_job_details` instead of calling `get_job_details` in parallel.\n"
+        "3. When bookmarking multiple jobs, ALWAYS use `batch_save_jobs`.\n"
+        "4. When sending recruiter follow-ups for multiple jobs, ALWAYS use `batch_follow_up`.\n"
+        "5. Limit parallel tool calls to maximum 2 concurrent invocations to prevent UI permission hangs and client timeouts."
     )
 )
 
@@ -430,10 +436,26 @@ def get_job_details(job_id: Union[int, str], token: Optional[str] = None) -> Dic
     Fetch comprehensive details for a specific job on Hirist.
     Includes full Job Description (JD), required skills/tags, experience requirements,
     locations, recruiter profile, company metadata, and application status.
+    NOTE: When inspecting details for multiple jobs, ALWAYS prefer batch_get_job_details.
     Args:
         job_id: The Hirist job ID or job code (e.g. 1684278)
     """
     status, res = client.get_job_details(job_id=job_id, token=token)
+    return {"status_code": status, "result": res}
+
+
+@mcp.tool()
+def batch_get_job_details(
+    job_ids: List[Union[int, str]],
+    token: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Fetch job details and descriptions for multiple jobs in a single batched operation.
+    Uses in-memory caching and safe sequential fetching to eliminate client timeout drops.
+    Args:
+        job_ids: List of numeric Hirist job IDs (e.g. [1684702, 1684614])
+    """
+    status, res = client.batch_get_job_details(job_ids=job_ids, token=token)
     return {"status_code": status, "result": res}
 
 
@@ -455,7 +477,9 @@ def apply_to_job(
     token: Optional[str] = None
 ) -> Dict[str, Any]:
     """
-    Apply to a job on Hirist.
+    Apply to a single job on Hirist.
+    NOTE: When applying to 2 or more jobs, ALWAYS prefer batch_apply_jobs to prevent
+    UI permission approval queuing and client timeout hangs.
     Args:
         job_id: The Hirist job ID to apply for
         coverletter: Optional custom cover letter for this specific application
@@ -465,13 +489,47 @@ def apply_to_job(
 
 
 @mcp.tool()
+def batch_apply_jobs(
+    job_ids: List[Union[int, str]],
+    coverletter: Optional[str] = None,
+    token: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Apply to multiple Hirist jobs in a single batched operation.
+    Solves Gemini Web's per-tool permission modal bottleneck by requiring only a SINGLE user approval.
+    Executes applications sequentially with safe spacing (200ms) to prevent upstream throttling and client timeouts.
+    Returns an aggregated summary of applied, already-applied, assessment-required, and failed jobs.
+    Args:
+        job_ids: List of numeric Hirist job IDs (e.g. [1684702, 1684614, 1684300])
+        coverletter: Optional shared cover letter for the applications
+    """
+    status, res = client.batch_apply_jobs(job_ids=job_ids, coverletter=coverletter, token=token)
+    return {"status_code": status, "result": res}
+
+
+@mcp.tool()
 def save_job(job_id: Union[int, str], token: Optional[str] = None) -> Dict[str, Any]:
     """
     Save/bookmark a job on Hirist for later review.
+    NOTE: When bookmarking multiple jobs, prefer batch_save_jobs.
     Args:
         job_id: The Hirist job ID
     """
     status, res = client.save_job(job_id=job_id, token=token)
+    return {"status_code": status, "result": res}
+
+
+@mcp.tool()
+def batch_save_jobs(
+    job_ids: List[Union[int, str]],
+    token: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Bookmark/save multiple jobs on Hirist in a single batch.
+    Args:
+        job_ids: List of job IDs to bookmark
+    """
+    status, res = client.batch_save_jobs(job_ids=job_ids, token=token)
     return {"status_code": status, "result": res}
 
 
@@ -490,10 +548,25 @@ def unsave_job(job_id: Union[int, str], token: Optional[str] = None) -> Dict[str
 def do_follow_up(job_id: Union[int, str], token: Optional[str] = None) -> Dict[str, Any]:
     """
     Send a follow-up nudge to the recruiter for an already applied job.
+    NOTE: When following up on multiple jobs, prefer batch_follow_up.
     Args:
         job_id: The Hirist job ID
     """
     status, res = client.do_follow_up(job_id=job_id, token=token)
+    return {"status_code": status, "result": res}
+
+
+@mcp.tool()
+def batch_follow_up(
+    job_ids: List[Union[int, str]],
+    token: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Send recruiter follow-up nudges for multiple applied jobs in one operation.
+    Args:
+        job_ids: List of applied job IDs to follow up on
+    """
+    status, res = client.batch_follow_up(job_ids=job_ids, token=token)
     return {"status_code": status, "result": res}
 
 
@@ -862,7 +935,8 @@ def run_server(transport: str = "stdio", port: Optional[int] = None, host: str =
             app_instance,
             host=host,
             port=port,
-            log_level="info"
+            log_level="info",
+            timeout_keep_alive=65
         )
         server = uvicorn.Server(config)
         anyio.run(server.serve)
