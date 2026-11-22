@@ -5,9 +5,7 @@ Provides Tools, Resources, and Prompts for Hirist.tech.
 import os
 import re
 import time
-import json
 import urllib.parse
-from pathlib import Path
 from typing import Dict, Any, List, Optional, Union
 
 from starlette.requests import Request
@@ -18,7 +16,7 @@ try:
 except Exception:
     from mcp.server.fastmcp import FastMCP  # type: ignore
 
-from hirist_mcp import client
+from hirist_mcp import client, auth
 from hirist_mcp.auth import (
     SESSION_STORE,
     clean_stale_sessions,
@@ -26,7 +24,6 @@ from hirist_mcp.auth import (
     current_session_token,
     current_session_phpsessid,
     current_session_resume_url,
-    decode_jwt
 )
 
 # Initialize the FastMCP server
