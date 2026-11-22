@@ -27,12 +27,13 @@ A production-ready **Model Context Protocol (MCP)** server for **[Hirist.tech](h
 
 ---
 
-## 🛠️ Complete Tools Catalog (28 Tools)
+## 🛠️ Complete Tools Catalog (32 Tools)
 
 ### 1. Profile & Full Lifecycle Management
 | Tool | Description |
 | :--- | :--- |
 | `validate_session` | Verify active Hirist session and retrieve candidate `seekerId`. |
+| `refresh_session_token` | Refresh and renew the `HIRIST_CK1` token using `PHPSESSID`. |
 | `get_profile` | Fetch complete candidate profile schema (experience, salary, institute, resume path). |
 | `get_full_profile_v2` | Fetch multi-section structured profile: Personal (`pd`), Experience (`we`), Education (`ed`), Skills (`rd`), Additional (`ai`). |
 | `update_personal_details` | Update candidate personal & career details (designation, company, exp, CTC, notice period, location, phone, linkedin). |
@@ -44,6 +45,8 @@ A production-ready **Model Context Protocol (MCP)** server for **[Hirist.tech](h
 | `get_cover_letter` | Retrieve candidate default cover letter and application preferences. |
 | `update_cover_letter` | Update default cover letter and auto-attachment preferences. |
 | `touch_profile_pulse` | Touch activity timestamp to display "Active Today" in recruiter searches. |
+| `get_resume` | Fetch active resume file details and presigned S3 URL. |
+| `upload_resume` | Upload a local PDF/DOCX resume file directly to Hirist (`/media/files`). |
 | `download_resume` | Download and extract plain text from candidate's PDF resume. |
 
 ### 2. Job Search & Recommendations
@@ -52,13 +55,14 @@ A production-ready **Model Context Protocol (MCP)** server for **[Hirist.tech](h
 | `get_job_feed` | Retrieve candidate's personalized curated tech job feed. |
 | `search_jobs` | Search jobs by keywords, experience, location, and category. |
 | `get_job_details` | Fetch comprehensive JD, required tags, recruiter details, and status. |
+| `get_job_assessment` | Fetch screening questionnaire questions required for specific jobs. |
 | `get_applied_job_count` | Get total count of jobs applied to on Hirist. |
 | `get_pending_jobs_count` | Get count of pending job assessments or actions. |
 
 ### 3. Applications & Recruiter Engagement
 | Tool | Description |
 | :--- | :--- |
-| `apply_to_job` | Apply to a specific job opening with optional tailored cover letter. |
+| `apply_to_job` | Apply directly to tech openings with custom cover letters (supports 1-click apply, already-applied detection, and assessment alerts). |
 | `save_job` | Save/bookmark a job for later review. |
 | `unsave_job` | Remove bookmark from a job. |
 | `do_follow_up` | Send a recruiter follow-up nudge for an applied job. |
