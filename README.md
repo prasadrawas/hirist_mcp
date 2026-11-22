@@ -27,63 +27,18 @@ A production-ready **Model Context Protocol (MCP)** server for **[Hirist.tech](h
 
 ---
 
-## 🛠️ Complete Tools Catalog (36 Tools)
+## 🛠️ Unified 6-Tool Architecture
 
-### 1. High-Performance Batch Operations (Solves UI Permission Queuing & Timeouts)
-| Tool | Description |
-| :--- | :--- |
-| `batch_apply_jobs` | Apply to multiple jobs in a single call with safe 200ms spacing. Solves Gemini Web modal queuing by requiring only **one** approval. |
-| `batch_get_job_details` | Inspect descriptions, skills, and recruiters for multiple jobs in one operation with in-memory caching. |
-| `batch_save_jobs` | Bookmark multiple jobs in a single batch. |
-| `batch_follow_up` | Send recruiter follow-up nudges for multiple applied jobs in one operation. |
+The Hirist MCP server has been engineered into a high-performance **6-Tool Architecture**, reducing prompt context token consumption by **~80%** (from ~5,200 tokens down to ~900 tokens) while eliminating Gemini Web's modal permission queuing.
 
-### 2. Profile & Full Lifecycle Management
-| Tool | Description |
-| :--- | :--- |
-| `validate_session` | Verify active Hirist session and retrieve candidate `seekerId`. |
-| `refresh_session_token` | Refresh and renew the `HIRIST_CK1` token using `PHPSESSID`. |
-| `get_profile` | Fetch complete candidate profile schema (experience, salary, institute, resume path). |
-| `get_full_profile_v2` | Fetch multi-section structured profile: Personal (`pd`), Experience (`we`), Education (`ed`), Skills (`rd`), Additional (`ai`). |
-| `update_personal_details` | Update candidate personal & career details (designation, company, exp, CTC, notice period, location, phone, linkedin). |
-| `update_work_experience` | Add or update employment records (title, company, dates, current role, salary, description, city). |
-| `update_education` | Add or update academic history (institute, degree, start/end year, full-time/part-time, specialization). |
-| `update_additional_info` | Update profile bio/summary (`about`), GitHub URL, team handling, career break status, domain roles. |
-| `get_key_skills` | Fetch candidate key skills and tag identifiers. |
-| `update_key_skills` | Update or replace candidate skills array (e.g. Python, Flutter, Docker). |
-| `get_cover_letter` | Retrieve candidate default cover letter and application preferences. |
-| `update_cover_letter` | Update default cover letter and auto-attachment preferences. |
-| `touch_profile_pulse` | Touch activity timestamp to display "Active Today" in recruiter searches. |
-| `get_resume` | Fetch active resume file details and presigned S3 URL. |
-| `upload_resume` | Upload a local PDF/DOCX resume file directly to Hirist (`/media/files`). |
-| `download_resume` | Download and extract plain text from candidate's PDF resume. |
-
-### 2. Job Search & Recommendations
-| Tool | Description |
-| :--- | :--- |
-| `get_job_feed` | Retrieve candidate's personalized curated tech job feed. |
-| `search_jobs` | Search jobs by keywords, experience, location, and category. |
-| `get_job_details` | Fetch comprehensive JD, required tags, recruiter details, and status. |
-| `get_job_assessment` | Fetch screening questionnaire questions required for specific jobs. |
-| `get_applied_job_count` | Get total count of jobs applied to on Hirist. |
-| `get_pending_jobs_count` | Get count of pending job assessments or actions. |
-
-### 3. Applications & Recruiter Engagement
-| Tool | Description |
-| :--- | :--- |
-| `apply_to_job` | Apply directly to tech openings with custom cover letters (supports 1-click apply, already-applied detection, and assessment alerts). |
-| `save_job` | Save/bookmark a job for later review. |
-| `unsave_job` | Remove bookmark from a job. |
-| `do_follow_up` | Send a recruiter follow-up nudge for an applied job. |
-
-### 4. Settings, Privacy & Autosuggest
-| Tool | Description |
-| :--- | :--- |
-| `get_user_settings` | Fetch email, push notification, and account preferences. |
-| `update_user_settings` | Update notification and account settings. |
-| `get_blocked_companies` | List companies blocked from viewing candidate profile. |
-| `block_or_unblock_company` | Block or unblock a company from viewing candidate profile. |
-| `suggest_companies` | Autosuggest company names matching query prefix. |
-| `suggest_institutes` | Autosuggest college/university names matching query prefix. |
+| Tool | Action Options / Capabilities | Description |
+| :--- | :--- | :--- |
+| **`manage_profile`** | `action`: `"get"`, `"update"`, `"pulse"`, `"get_resume"`, `"upload_resume"` | Complete candidate profile lifecycle: view profile, update specific sections (personal details, skills, experience, education, bio, cover letter), bump recruiter search visibility pulse, and manage resumes. |
+| **`search_jobs`** | `query`, `location`, `min_exp`, `max_exp`, `category_id`, `page`, `size` | Discover tech openings. If query and filters are omitted, automatically returns your personalized **Job Feed**. Otherwise, executes full parametric search. |
+| **`get_job_details`** | `job_ids`: `Union[int, List[int]]`, `include_assessment`: `bool` | Comprehensive inspection for single or multiple jobs. Returns full JD, skills tags, recruiter info, and automatically embeds screening questionnaire questions if required. |
+| **`manage_job_pipeline`** | `action`: `"apply"`, `"save"`, `"unsave"`, `"follow_up"`, `"metrics"` | Complete application pipeline: submit applications (single or batch with safe 200ms spacing), bookmark/save jobs, un-bookmark, send recruiter follow-ups, and fetch application statistics. |
+| **`manage_account`** | `action`: `"get_settings"`, `"update_settings"`, `"list_blocked"`, `"block_company"`, `"unblock_company"`, `"suggest"` | Account settings, employer privacy (blocking competitor companies from seeing your profile), and company/institute autosuggest autocomplete. |
+| **`manage_session`** | `action`: `"validate"`, `"refresh"` | Candidate authentication verification and on-demand JWT token renewal via Gladiator Auth. |
 
 ---
 

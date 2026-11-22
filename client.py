@@ -750,6 +750,59 @@ def upload_resume(
         return 500, {"error": str(e), "statusCode": 500}
 
 
+def download_resume_text(
+    pdf_url: Optional[str] = None,
+    max_pages: int = 10,
+    token: Optional[str] = None
+) -> Dict[str, Any]:
+    """Download candidate resume and extract plain text."""
+    target_url = (pdf_url or "").strip()
+    if not target_url:
+        st_res, res_res = get_resume(token=token)
+        if st_res == 200 and isinstance(res_res, dict):
+            target_url = res_res.get("data", {}).get("textResume", "")
+
+    if not target_url:
+        status, profile_data = get_profile(token=token)
+        if status == 200 and isinstance(profile_data, dict):
+            resume_path = profile_data.get("resumePath")
+            return {
+                "status": "partial",
+                "message": f"Candidate has resume '{resume_path}' on Hirist. To extract full text, pass direct pdf_url.",
+                "profile_resume_path": resume_path,
+                "profile_id": profile_data.get("id"),
+                "profile_name": profile_data.get("name")
+            }
+        return {"error": "No resume URL provided or found on profile."}
+
+    import io
+    try:
+        resp = _HTTP_CLIENT.get(target_url, timeout=15.0)
+        if resp.status_code != 200:
+            return {"error": f"Failed to fetch PDF from URL, HTTP {resp.status_code}", "source_url": target_url}
+        pdf_bytes = resp.content
+
+        import pypdf
+        reader = pypdf.PdfReader(io.BytesIO(pdf_bytes))
+        num_pages = len(reader.pages)
+        pages_to_read = min(num_pages, max_pages)
+
+        extracted_text = []
+        for i in range(pages_to_read):
+            page_text = reader.pages[i].extract_text() or ""
+            extracted_text.append(f"--- PAGE {i+1} ---\n{page_text.strip()}")
+
+        return {
+            "status": "success",
+            "source_url": target_url,
+            "total_pages": num_pages,
+            "pages_extracted": pages_to_read,
+            "resume_text": "\n\n".join(extracted_text)
+        }
+    except Exception as e:
+        return {"error": f"Failed to parse resume PDF: {str(e)}", "source_url": target_url}
+
+
 # ---------------------------------------------------------------------------
 # BATCH OPERATION METHODS (Mitigate Rate Limits & UI Permission Queuing)
 # ---------------------------------------------------------------------------

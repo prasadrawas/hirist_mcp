@@ -6,7 +6,7 @@ import os
 import re
 import time
 import urllib.parse
-from typing import Dict, Any, List, Optional, Union
+from typing import Dict, Any, List, Optional, Union, Literal
 
 from starlette.requests import Request
 from starlette.responses import Response, JSONResponse, HTMLResponse
@@ -26,19 +26,19 @@ from hirist_mcp.auth import (
     current_session_resume_url,
 )
 
-# Initialize the FastMCP server with performance and concurrency instructions
+# Initialize the FastMCP server with unified 6-tool architecture instructions
 mcp = FastMCP(
     "hirist-mcp",
     instructions=(
-        "Hirist MCP Server: Manage Hirist candidate profile, update key skills, "
-        "search tech jobs, inspect job descriptions, submit applications, bookmark jobs, "
-        "nudge recruiters via follow-ups, and optimize recruiter search visibility.\n\n"
-        "PERFORMANCE & CONCURRENCY GUIDELINES FOR LLMs:\n"
-        "1. When applying to multiple jobs, ALWAYS invoke `batch_apply_jobs` instead of calling `apply_to_job` in parallel.\n"
-        "2. When inspecting details for multiple jobs, ALWAYS invoke `batch_get_job_details` instead of calling `get_job_details` in parallel.\n"
-        "3. When bookmarking multiple jobs, ALWAYS use `batch_save_jobs`.\n"
-        "4. When sending recruiter follow-ups for multiple jobs, ALWAYS use `batch_follow_up`.\n"
-        "5. Limit parallel tool calls to maximum 2 concurrent invocations to prevent UI permission hangs and client timeouts."
+        "Hirist MCP Server (Unified 6-Tool Architecture): Production MCP server for Hirist.tech candidate profile "
+        "management, smart tech job discovery, applications, recruiter follow-ups, and employer privacy.\n\n"
+        "CORE TOOLS (Total 6 Tools):\n"
+        "1. `manage_profile`: Candidate profile reads, section updates (skills, bio, experience, education), resume management, and recruiter activity pulse.\n"
+        "2. `search_jobs`: Search tech jobs by keywords/location or retrieve your personalized Job Feed (when no query is given).\n"
+        "3. `get_job_details`: Inspect single or multiple job descriptions, tech stack tags, recruiter profiles, and screening questions.\n"
+        "4. `manage_job_pipeline`: Apply to jobs (single or batch), bookmark/un-bookmark jobs, follow up with recruiters, and fetch application statistics.\n"
+        "5. `manage_account`: Employer privacy (blocking competitor companies), notification settings, and company/institute autosuggest.\n"
+        "6. `manage_session`: Verify active session authentication or renew session token."
     )
 )
 
@@ -142,607 +142,350 @@ async def index_route(request: Request) -> Response:
 
 
 # ---------------------------------------------------------------------------
-# TOOLS DEFINITIONS
+# TOOLS DEFINITIONS (Consolidated 6-Tool Architecture)
 # ---------------------------------------------------------------------------
 
 @mcp.tool()
-def validate_session(token: Optional[str] = None) -> Dict[str, Any]:
-    """
-    Validate the current Hirist candidate session.
-    Returns candidate seekerId, authentication status, and token details.
-    """
-    status, res = client.validate_session(token=token)
-    return {"status_code": status, "result": res}
-
-
-@mcp.tool()
-def refresh_session_token(
-    phpsessid: Optional[str] = None,
-    token: Optional[str] = None
-) -> Dict[str, Any]:
-    """
-    Refresh and renew the Hirist access token (HIRIST_CK1) using the session cookie (PHPSESSID).
-    Automatically mints a new 30-day JWT token from Gladiator Auth.
-    """
-    new_token, psid = auth.refresh_hirist_token(phpsessid_override=phpsessid, token_override=token)
-    if new_token:
-        return {
-            "status": "success",
-            "message": "Hirist access token refreshed successfully.",
-            "token_preview": f"{new_token[:25]}...{new_token[-15:]}"
-        }
-    return {
-        "status": "error",
-        "message": "Failed to refresh token. Please check that PHPSESSID cookie is valid."
-    }
-
-
-@mcp.tool()
-def get_profile(token: Optional[str] = None) -> Dict[str, Any]:
-    """
-    Fetch the complete candidate profile from Hirist.
-    Includes candidate name, email, phone, current designation, experience (years/months),
-    current CTC, expected CTC, institute, graduation year, resume path, and visibility status.
-    """
-    status, res = client.get_profile(token=token)
-    return {"status_code": status, "profile": res}
-
-
-@mcp.tool()
-def get_full_profile_v2(token: Optional[str] = None) -> Dict[str, Any]:
-    """
-    Fetch comprehensive structured profile data including personal details (pd),
-    work experiences (we), educations (ed), IT skills/resume details (rd),
-    and additional profile info (ai).
-    """
-    status, res = client.get_full_profile_v2(token=token)
-    return {"status_code": status, "result": res}
-
-
-@mcp.tool()
-def update_personal_details(
-    name: Optional[str] = None,
-    current_designation: Optional[str] = None,
-    current_organization: Optional[str] = None,
-    exp_year: Optional[int] = None,
-    exp_month: Optional[int] = None,
-    current_ctc: Optional[str] = None,
-    expected_ctc: Optional[str] = None,
-    notice_period: Optional[Union[int, str]] = None,
-    phone: Optional[Union[int, str]] = None,
-    current_location: Optional[str] = None,
-    linkedin: Optional[str] = None,
-    career_objective: Optional[str] = None,
-    token: Optional[str] = None
-) -> Dict[str, Any]:
-    """
-    Update candidate's personal and career details on Hirist.
-    Args:
-        name: Full name
-        current_designation: Current job title / role (e.g. 'Senior Software Engineer')
-        current_organization: Current company name
-        exp_year: Total years of professional experience
-        exp_month: Total months of experience (0-11)
-        current_ctc: Current CTC in Lakhs (e.g. '15')
-        expected_ctc: Expected CTC in Lakhs (e.g. '25')
-        notice_period: Notice period in days (e.g. 15, 30, 60, 90)
-        phone: Contact mobile number
-        current_location: Current city location ID or name
-        linkedin: LinkedIn profile URL
-        career_objective: Short summary / objective
-    """
-    status, res = client.update_personal_details(
-        name=name,
-        current_designation=current_designation,
-        current_organization=current_organization,
-        exp_year=exp_year,
-        exp_month=exp_month,
-        current_ctc=current_ctc,
-        expected_ctc=expected_ctc,
-        notice_period=notice_period,
-        phone=phone,
-        current_location=current_location,
-        linkedin=linkedin,
-        career_objective=career_objective,
-        token=token
-    )
-    return {"status_code": status, "result": res}
-
-
-@mcp.tool()
-def update_work_experience(
-    experiences: List[Dict[str, Any]],
-    token: Optional[str] = None
-) -> Dict[str, Any]:
-    """
-    Update candidate's work experience history on Hirist.
-    Args:
-        experiences: List of employment records. Each dictionary accepts:
-            - designation (str): Job title
-            - organization (str): Company name
-            - fromExpMonth (int): Start month (1-12)
-            - fromExpYear (int): Start year (e.g. 2021)
-            - toExpMonth (int): End month (1-12, or 0 if current)
-            - toExpYear (int): End year (e.g. 2023, or 0 if current)
-            - isCurrent (int): 1 if currently working, 0 otherwise
-            - salary (int): Annual salary
-            - description (str): Responsibilities and achievements
-            - city (str): Job location city
-    """
-    status, res = client.update_work_experience(experiences=experiences, token=token)
-    return {"status_code": status, "result": res}
-
-
-@mcp.tool()
-def update_education(
-    educations: List[Dict[str, Any]],
-    token: Optional[str] = None
-) -> Dict[str, Any]:
-    """
-    Update candidate's education history on Hirist.
-    Args:
-        educations: List of education records. Each dictionary accepts:
-            - institute (str): University, college, or school name
-            - degree (str): Degree identifier or title (e.g. '8' for B.Tech/B.E.)
-            - courseType (int): 1=Full Time, 2=Part Time, 3=Correspondence
-            - batchFrom (int): Start year (e.g. 2018)
-            - batchTo (int): Graduation year (e.g. 2021)
-            - isPrimary (int): 1 if primary highest degree, 0 otherwise
-            - specialization (str): Branch or specialization (e.g. 'Computer Science')
-            - description (str): Additional notes or academic highlights
-    """
-    status, res = client.update_education(educations=educations, token=token)
-    return {"status_code": status, "result": res}
-
-
-@mcp.tool()
-def update_additional_info(
-    about: Optional[str] = None,
-    github: Optional[str] = None,
-    linkedin: Optional[str] = None,
-    handle_team: Optional[bool] = None,
-    career_break: Optional[bool] = None,
-    role_and_responsibility: Optional[str] = None,
-    token: Optional[str] = None
-) -> Dict[str, Any]:
-    """
-    Update additional profile details (About summary, GitHub URL, team handling, role & responsibility).
-    Args:
-        about: Professional profile summary / bio
-        github: GitHub profile URL
-        linkedin: LinkedIn profile URL
-        handle_team: Whether candidate has team lead / management experience
-        career_break: Whether candidate has had a career break
-        role_and_responsibility: Key domain roles & responsibilities
-    """
-    status, res = client.update_additional_info(
-        about=about,
-        github=github,
-        linkedin=linkedin,
-        handle_team=handle_team,
-        career_break=career_break,
-        role_and_responsibility=role_and_responsibility,
-        token=token
-    )
-    return {"status_code": status, "result": res}
-
-
-@mcp.tool()
-def get_key_skills(token: Optional[str] = None) -> Dict[str, Any]:
-    """
-    Fetch candidate's key skills list and tags from Hirist.
-    """
-    status, res = client.get_skills(token=token)
-    return {"status_code": status, "result": res}
-
-
-@mcp.tool()
-def update_key_skills(skills: List[str], token: Optional[str] = None) -> Dict[str, Any]:
-    """
-    Update or replace candidate's key skills on Hirist.
-    Args:
-        skills: List of skill names (e.g. ['Python', 'FastAPI', 'Docker', 'PostgreSQL'])
-    """
-    status, res = client.update_skills(skills=skills, token=token)
-    return {"status_code": status, "result": res}
-
-
-@mcp.tool()
-def get_cover_letter(token: Optional[str] = None) -> Dict[str, Any]:
-    """
-    Fetch candidate's default cover letter and application preferences.
-    """
-    status, res = client.get_cover_letter(token=token)
-    return {"status_code": status, "result": res}
-
-
-@mcp.tool()
-def update_cover_letter(
-    coverletter: str,
-    include_coverletter: bool = True,
-    token: Optional[str] = None
-) -> Dict[str, Any]:
-    """
-    Update candidate's default cover letter on Hirist.
-    Args:
-        coverletter: Full cover letter text
-        include_coverletter: Whether to automatically attach cover letter when applying
-    """
-    status, res = client.update_cover_letter(
-        coverletter=coverletter,
-        include_coverletter=include_coverletter,
-        token=token
-    )
-    return {"status_code": status, "result": res}
-
-
-@mcp.tool()
-def touch_profile_pulse(token: Optional[str] = None) -> Dict[str, Any]:
-    """
-    Touch candidate profile activity timestamp ('Active Today').
-    This boosts recruiter visibility by signaling that the candidate is actively looking for opportunities today.
-    """
-    status, res = client.touch_profile_pulse(token=token)
-    return {"status_code": status, "result": res}
-
-
-@mcp.tool()
-def get_job_feed(token: Optional[str] = None) -> Dict[str, Any]:
-    """
-    Fetch personalized tech job recommendations curated by Hirist for the candidate.
-    """
-    status, res = client.get_job_feed(token=token)
-    return {"status_code": status, "result": res}
-
-
-@mcp.tool()
-def search_jobs(
-    query: str,
-    size: int = 20,
-    page: int = 1,
-    min_exp: Optional[int] = None,
-    max_exp: Optional[int] = None,
-    location: Optional[str] = None,
-    category_id: Optional[Union[int, str]] = None,
-    token: Optional[str] = None
-) -> Dict[str, Any]:
-    """
-    Search tech jobs on Hirist by keyword, experience, location, or category.
-    Args:
-        query: Search keywords (e.g. 'Python Developer', 'Full Stack', 'Backend')
-        size: Number of jobs to return per page (default: 20)
-        page: Page number (default: 1)
-        min_exp: Minimum years of experience
-        max_exp: Maximum years of experience
-        location: City/location name
-        category_id: Optional Hirist category ID
-    """
-    status, res = client.search_jobs(
-        query=query,
-        size=size,
-        page=page,
-        min_exp=min_exp,
-        max_exp=max_exp,
-        location=location,
-        category_id=category_id,
-        token=token
-    )
-    return {"status_code": status, "result": res}
-
-
-@mcp.tool()
-def get_job_details(job_id: Union[int, str], token: Optional[str] = None) -> Dict[str, Any]:
-    """
-    Fetch comprehensive details for a specific job on Hirist.
-    Includes full Job Description (JD), required skills/tags, experience requirements,
-    locations, recruiter profile, company metadata, and application status.
-    NOTE: When inspecting details for multiple jobs, ALWAYS prefer batch_get_job_details.
-    Args:
-        job_id: The Hirist job ID or job code (e.g. 1684278)
-    """
-    status, res = client.get_job_details(job_id=job_id, token=token)
-    return {"status_code": status, "result": res}
-
-
-@mcp.tool()
-def batch_get_job_details(
-    job_ids: List[Union[int, str]],
-    token: Optional[str] = None
-) -> Dict[str, Any]:
-    """
-    Fetch job details and descriptions for multiple jobs in a single batched operation.
-    Uses in-memory caching and safe sequential fetching to eliminate client timeout drops.
-    Args:
-        job_ids: List of numeric Hirist job IDs (e.g. [1684702, 1684614])
-    """
-    status, res = client.batch_get_job_details(job_ids=job_ids, token=token)
-    return {"status_code": status, "result": res}
-
-
-@mcp.tool()
-def get_job_assessment(job_id: Union[int, str], token: Optional[str] = None) -> Dict[str, Any]:
-    """
-    Fetch assessment / screening questions required for applying to a job.
-    Args:
-        job_id: The Hirist job ID
-    """
-    status, res = client.get_job_assessment(job_id=job_id, token=token)
-    return {"status_code": status, "result": res}
-
-
-@mcp.tool()
-def apply_to_job(
-    job_id: Union[int, str],
-    coverletter: Optional[str] = None,
-    token: Optional[str] = None
-) -> Dict[str, Any]:
-    """
-    Apply to a single job on Hirist.
-    NOTE: When applying to 2 or more jobs, ALWAYS prefer batch_apply_jobs to prevent
-    UI permission approval queuing and client timeout hangs.
-    Args:
-        job_id: The Hirist job ID to apply for
-        coverletter: Optional custom cover letter for this specific application
-    """
-    status, res = client.apply_to_job(job_id=job_id, coverletter=coverletter, token=token)
-    return {"status_code": status, "result": res}
-
-
-@mcp.tool()
-def batch_apply_jobs(
-    job_ids: List[Union[int, str]],
-    coverletter: Optional[str] = None,
-    token: Optional[str] = None
-) -> Dict[str, Any]:
-    """
-    Apply to multiple Hirist jobs in a single batched operation.
-    Solves Gemini Web's per-tool permission modal bottleneck by requiring only a SINGLE user approval.
-    Executes applications sequentially with safe spacing (200ms) to prevent upstream throttling and client timeouts.
-    Returns an aggregated summary of applied, already-applied, assessment-required, and failed jobs.
-    Args:
-        job_ids: List of numeric Hirist job IDs (e.g. [1684702, 1684614, 1684300])
-        coverletter: Optional shared cover letter for the applications
-    """
-    status, res = client.batch_apply_jobs(job_ids=job_ids, coverletter=coverletter, token=token)
-    return {"status_code": status, "result": res}
-
-
-@mcp.tool()
-def save_job(job_id: Union[int, str], token: Optional[str] = None) -> Dict[str, Any]:
-    """
-    Save/bookmark a job on Hirist for later review.
-    NOTE: When bookmarking multiple jobs, prefer batch_save_jobs.
-    Args:
-        job_id: The Hirist job ID
-    """
-    status, res = client.save_job(job_id=job_id, token=token)
-    return {"status_code": status, "result": res}
-
-
-@mcp.tool()
-def batch_save_jobs(
-    job_ids: List[Union[int, str]],
-    token: Optional[str] = None
-) -> Dict[str, Any]:
-    """
-    Bookmark/save multiple jobs on Hirist in a single batch.
-    Args:
-        job_ids: List of job IDs to bookmark
-    """
-    status, res = client.batch_save_jobs(job_ids=job_ids, token=token)
-    return {"status_code": status, "result": res}
-
-
-@mcp.tool()
-def unsave_job(job_id: Union[int, str], token: Optional[str] = None) -> Dict[str, Any]:
-    """
-    Remove a saved/bookmarked job on Hirist.
-    Args:
-        job_id: The Hirist job ID
-    """
-    status, res = client.unsave_job(job_id=job_id, token=token)
-    return {"status_code": status, "result": res}
-
-
-@mcp.tool()
-def do_follow_up(job_id: Union[int, str], token: Optional[str] = None) -> Dict[str, Any]:
-    """
-    Send a follow-up nudge to the recruiter for an already applied job.
-    NOTE: When following up on multiple jobs, prefer batch_follow_up.
-    Args:
-        job_id: The Hirist job ID
-    """
-    status, res = client.do_follow_up(job_id=job_id, token=token)
-    return {"status_code": status, "result": res}
-
-
-@mcp.tool()
-def batch_follow_up(
-    job_ids: List[Union[int, str]],
-    token: Optional[str] = None
-) -> Dict[str, Any]:
-    """
-    Send recruiter follow-up nudges for multiple applied jobs in one operation.
-    Args:
-        job_ids: List of applied job IDs to follow up on
-    """
-    status, res = client.batch_follow_up(job_ids=job_ids, token=token)
-    return {"status_code": status, "result": res}
-
-
-@mcp.tool()
-def get_applied_job_count(token: Optional[str] = None) -> Dict[str, Any]:
-    """
-    Fetch the total count of jobs applied to on Hirist.
-    """
-    status, res = client.get_applied_job_count(token=token)
-    return {"status_code": status, "result": res}
-
-
-@mcp.tool()
-def get_pending_jobs_count(token: Optional[str] = None) -> Dict[str, Any]:
-    """
-    Fetch count of pending job assessments or actions.
-    """
-    status, res = client.get_pending_jobs_count(token=token)
-    return {"status_code": status, "result": res}
-
-
-@mcp.tool()
-def get_user_settings(token: Optional[str] = None) -> Dict[str, Any]:
-    """
-    Fetch candidate notification and account settings on Hirist.
-    """
-    status, res = client.get_user_settings(token=token)
-    return {"status_code": status, "result": res}
-
-
-@mcp.tool()
-def update_user_settings(settings: Dict[str, Any], token: Optional[str] = None) -> Dict[str, Any]:
-    """
-    Update candidate notification and account settings on Hirist.
-    """
-    status, res = client.update_user_settings(settings=settings, token=token)
-    return {"status_code": status, "result": res}
-
-
-@mcp.tool()
-def get_blocked_companies(token: Optional[str] = None) -> Dict[str, Any]:
-    """
-    Fetch the list of employers blocked from seeing candidate profile.
-    """
-    status, res = client.get_blocked_companies(token=token)
-    return {"status_code": status, "result": res}
-
-
-@mcp.tool()
-def block_or_unblock_company(
-    company_id: Union[int, str],
-    block: bool = True,
-    token: Optional[str] = None
-) -> Dict[str, Any]:
-    """
-    Block or unblock a company from viewing candidate profile.
-    Args:
-        company_id: Company ID or numeric identifier
-        block: True to block, False to unblock
-    """
-    status, res = client.block_or_unblock_company(company_id=company_id, block=block, token=token)
-    return {"status_code": status, "result": res}
-
-
-@mcp.tool()
-def suggest_companies(query: str, token: Optional[str] = None) -> Dict[str, Any]:
-    """
-    Auto-suggest company names matching the given query string.
-    """
-    status, res = client.suggest_companies(query=query, token=token)
-    return {"status_code": status, "result": res}
-
-
-@mcp.tool()
-def suggest_institutes(query: str, token: Optional[str] = None) -> Dict[str, Any]:
-    """
-    Auto-suggest universities/colleges matching the given query string.
-    """
-    status, res = client.suggest_institutes(query=query, token=token)
-    return {"status_code": status, "result": res}
-
-
-@mcp.tool()
-def download_resume(
-    pdf_url: Optional[str] = None,
+def manage_profile(
+    action: Literal["get", "update", "pulse", "get_resume", "upload_resume"] = "get",
+    personal: Optional[Dict[str, Any]] = None,
+    skills: Optional[List[str]] = None,
+    experience: Optional[List[Dict[str, Any]]] = None,
+    education: Optional[List[Dict[str, Any]]] = None,
+    additional_info: Optional[Dict[str, Any]] = None,
+    cover_letter: Optional[str] = None,
+    file_path: Optional[str] = None,
+    extract_text: bool = False,
     max_pages: int = 10,
     token: Optional[str] = None
 ) -> Dict[str, Any]:
     """
-    Download and extract plain text from candidate's PDF resume.
-    If pdf_url is omitted, uses the URL configured via server parameters (?resume=) or profile.
+    Candidate profile management: view profile, update career details/skills,
+    boost recruiter search ranking via activity pulse, and manage resumes.
     Args:
-        pdf_url: Optional direct HTTP/HTTPS URL to download the candidate's PDF resume
-        max_pages: Maximum number of PDF pages to extract (default: 10)
+        action: 'get' (view full profile), 'update' (modify provided fields), 'pulse' (bump recruiter activity timestamp),
+                'get_resume' (fetch resume metadata and optionally extracted text), 'upload_resume' (upload local PDF/DOCX)
+        personal: Personal details to update (designation, company, exp_year, exp_month, current_ctc, expected_ctc,
+                  notice_period, location, phone, linkedin, name, etc.)
+        skills: List of key skill strings (e.g. ['Python', 'FastAPI', 'Docker'])
+        experience: List of work experience records to add/update
+        education: List of education records to add/update
+        additional_info: Additional profile fields (about summary, github, linkedin, handle_team, career_break)
+        cover_letter: Default cover letter text
+        file_path: Local filesystem path to PDF/DOCX resume file (required for 'upload_resume')
+        extract_text: If True when calling 'get_resume', downloads and parses resume PDF text
+        max_pages: Maximum pages to extract when extract_text=True (default: 10)
     """
-    target_url = (pdf_url or "").strip()
-    if not target_url:
-        target_url = current_session_resume_url.get().strip()
+    if action == "pulse":
+        status, res = client.touch_profile_pulse(token=token)
+        return {"status_code": status, "result": res}
 
-    sess_id = current_session_id.get().strip()
-    if not target_url and sess_id and sess_id in SESSION_STORE:
-        target_url = SESSION_STORE[sess_id].get("resume_url", "").strip()
+    elif action == "upload_resume":
+        if not file_path:
+            return {"status_code": 400, "error": "file_path is required for upload_resume"}
+        status, res = client.upload_resume(file_path=file_path, token=token)
+        return {"status_code": status, "result": res}
 
-    if not target_url:
-        # Check active resume media endpoint
-        st_res, res_res = client.get_resume(token=token)
-        if st_res == 200 and isinstance(res_res, dict):
-            target_url = res_res.get("data", {}).get("textResume", "")
+    elif action == "get_resume":
+        if extract_text:
+            text_res = client.download_resume_text(max_pages=max_pages, token=token)
+            return {"status_code": 200 if "resume_text" in text_res else 400, "result": text_res}
+        status, res = client.get_resume(token=token)
+        return {"status_code": status, "result": res}
 
-    if not target_url:
-        # Fallback to candidate profile metadata
-        status, profile_data = client.get_profile(token=token)
-        if status == 200 and isinstance(profile_data, dict):
-            resume_path = profile_data.get("resumePath")
-            return {
-                "status": "partial",
-                "message": (
-                    f"Candidate has resume '{resume_path}' on Hirist. "
-                    "To extract full text, pass direct pdf_url or connect with ?resume=<url>."
-                ),
-                "profile_resume_path": resume_path,
-                "profile_id": profile_data.get("id"),
-                "profile_name": profile_data.get("name")
-            }
-        return {"error": "No resume URL provided or found in session."}
+    elif action == "update":
+        updates_performed = []
+        errors = []
 
-    import io
-    import urllib.request
-    try:
-        req = urllib.request.Request(target_url, headers={"User-Agent": client.DEFAULT_USER_AGENT})
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            pdf_bytes = resp.read()
+        if personal:
+            st, res = client.update_personal_details(**personal, token=token)
+            if st == 200:
+                updates_performed.append("personal_details")
+            else:
+                errors.append({"section": "personal_details", "error": res})
 
-        import pypdf
-        reader = pypdf.PdfReader(io.BytesIO(pdf_bytes))
-        num_pages = len(reader.pages)
-        pages_to_read = min(num_pages, max_pages)
+        if skills is not None:
+            st, res = client.update_skills(skills=skills, token=token)
+            if st == 200:
+                updates_performed.append("skills")
+            else:
+                errors.append({"section": "skills", "error": res})
 
-        extracted_text = []
-        for i in range(pages_to_read):
-            page_text = reader.pages[i].extract_text() or ""
-            extracted_text.append(f"--- PAGE {i+1} ---\n{page_text.strip()}")
+        if experience is not None:
+            st, res = client.update_work_experience(experience_list=experience, token=token)
+            if st == 200:
+                updates_performed.append("work_experience")
+            else:
+                errors.append({"section": "work_experience", "error": res})
 
-        full_text = "\n\n".join(extracted_text)
+        if education is not None:
+            st, res = client.update_education(education_list=education, token=token)
+            if st == 200:
+                updates_performed.append("education")
+            else:
+                errors.append({"section": "education", "error": res})
+
+        if additional_info:
+            st, res = client.update_additional_info(**additional_info, token=token)
+            if st == 200:
+                updates_performed.append("additional_info")
+            else:
+                errors.append({"section": "additional_info", "error": res})
+
+        if cover_letter is not None:
+            st, res = client.update_cover_letter(cover_letter=cover_letter, token=token)
+            if st == 200:
+                updates_performed.append("cover_letter")
+            else:
+                errors.append({"section": "cover_letter", "error": res})
+
         return {
-            "status": "success",
-            "source_url": target_url,
-            "total_pages": num_pages,
-            "pages_extracted": pages_to_read,
-            "resume_text": full_text
+            "status_code": 200 if not errors else 207,
+            "status": "success" if not errors else "partial_success",
+            "updated_sections": updates_performed,
+            "errors": errors if errors else None
         }
-    except Exception as e:
-        return {"error": f"Failed to download or parse PDF: {str(e)}", "source_url": target_url}
+
+    else:  # "get"
+        status, profile_v2 = client.get_full_profile_v2(token=token)
+        st_skills, skills_res = client.get_skills(token=token)
+        st_resume, resume_res = client.get_resume(token=token)
+
+        unified_profile = {
+            "profile": profile_v2 if status == 200 else None,
+            "skills": skills_res if st_skills == 200 else None,
+            "resume": resume_res if st_resume == 200 else None
+        }
+        return {"status_code": 200, "result": unified_profile}
 
 
 @mcp.tool()
-def get_resume(token: Optional[str] = None) -> Dict[str, Any]:
-    """
-    Fetch active resume document URL and metadata for the candidate.
-    Returns the presigned S3 URL of the active resume.
-    """
-    status, res = client.get_resume(token=token)
-    return {"status_code": status, "result": res}
-
-
-@mcp.tool()
-def upload_resume(
-    file_path: str,
+def search_jobs(
+    query: Optional[str] = None,
+    location: Optional[str] = None,
+    min_exp: Optional[int] = None,
+    max_exp: Optional[int] = None,
+    category_id: Optional[Union[int, str]] = None,
+    page: int = 1,
+    size: int = 20,
     token: Optional[str] = None
 ) -> Dict[str, Any]:
     """
-    Upload a resume file (PDF or DOCX) to the candidate's Hirist account.
+    Search tech jobs on Hirist or retrieve your personalized curated job feed.
+    If query and all filters are omitted, automatically returns your curated Job Feed.
     Args:
-        file_path: Absolute or relative local path to the resume document (e.g. '/path/to/resume.pdf')
+        query: Search keywords (e.g. 'Senior Python Developer', 'Full Stack', 'Machine Learning')
+        location: City or location filter (e.g. 'Bangalore', 'Remote', 'Mumbai', 'Pune', 'Delhi')
+        min_exp: Minimum years of experience (e.g. 3)
+        max_exp: Maximum years of experience (e.g. 8)
+        category_id: Optional job category ID
+        page: Page number (default: 1)
+        size: Number of jobs to return (default: 20)
     """
-    status, res = client.upload_resume(file_path=file_path, token=token)
+    if not any([query, location, min_exp is not None, max_exp is not None, category_id]):
+        status, res = client.get_job_feed(page=page, size=size, token=token)
+        return {"status_code": status, "mode": "feed", "result": res}
+
+    status, res = client.search_jobs(
+        query=query or "",
+        min_exp=min_exp,
+        max_exp=max_exp,
+        location=location,
+        category_id=category_id,
+        page=page,
+        size=size,
+        token=token
+    )
+    return {"status_code": status, "mode": "search", "result": res}
+
+
+@mcp.tool()
+def get_job_details(
+    job_ids: Union[int, str, List[Union[int, str]]],
+    include_assessment: bool = True,
+    token: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Fetch comprehensive job details and requirements for one or more jobs.
+    Accepts a single job ID (e.g. 1684702) or a list of job IDs (e.g. [1684702, 1684614]).
+    Includes full JD, tech stack tags, experience requirements, recruiter profile, and status.
+    Args:
+        job_ids: Single numeric job ID or list of numeric job IDs
+        include_assessment: If True, automatically fetches screening questions if required by the job
+    """
+    if isinstance(job_ids, list):
+        clean_ids = [int(j) if str(j).isdigit() else str(j) for j in job_ids]
+        status, res = client.batch_get_job_details(job_ids=clean_ids, token=token)
+        return {"status_code": status, "result": res}
+
+    jid = int(job_ids) if str(job_ids).isdigit() else str(job_ids)
+    status, res = client.get_job_details(job_id=jid, token=token)
+
+    assessment_data = None
+    if include_assessment and status == 200:
+        st_a, res_a = client.get_job_assessment(job_id=jid, token=token)
+        if st_a == 200 and res_a:
+            assessment_data = res_a
+
+    return {
+        "status_code": status,
+        "job_id": jid,
+        "details": res,
+        "assessment": assessment_data
+    }
+
+
+@mcp.tool()
+def manage_job_pipeline(
+    action: Literal["apply", "save", "unsave", "follow_up", "metrics"] = "apply",
+    job_ids: Optional[Union[int, str, List[Union[int, str]]]] = None,
+    coverletter: Optional[str] = None,
+    token: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Manage job applications, saved bookmarks, recruiter follow-ups, and application statistics.
+    Accepts single or multiple job IDs uniformly with safe server-side rate limiting.
+    Args:
+        action: 'apply' (submit application), 'save' (bookmark job), 'unsave' (remove bookmark),
+                'follow_up' (nudge recruiter for applied job), 'metrics' (total applied & pending counts)
+        job_ids: Single job ID or list of job IDs (required for apply, save, unsave, follow_up)
+        coverletter: Optional custom cover letter (used when action='apply')
+    """
+    if action == "metrics":
+        st_app, res_app = client.get_applied_job_count(token=token)
+        st_pend, res_pend = client.get_pending_jobs_count(token=token)
+        return {
+            "status_code": 200,
+            "metrics": {
+                "applied_jobs_count": res_app.get("count", 0) if isinstance(res_app, dict) else res_app,
+                "pending_jobs_count": res_pend.get("count", 0) if isinstance(res_pend, dict) else res_pend
+            }
+        }
+
+    if not job_ids:
+        return {"status_code": 400, "error": f"job_ids parameter is required for action='{action}'"}
+
+    id_list = job_ids if isinstance(job_ids, list) else [job_ids]
+    clean_ids = [int(j) if str(j).isdigit() else str(j) for j in id_list]
+
+    if action == "apply":
+        if len(clean_ids) == 1:
+            st, res = client.apply_to_job(job_id=clean_ids[0], coverletter=coverletter, token=token)
+            return {"status_code": st, "result": res}
+        st, res = client.batch_apply_jobs(job_ids=clean_ids, coverletter=coverletter, token=token)
+        return {"status_code": st, "result": res}
+
+    elif action == "save":
+        if len(clean_ids) == 1:
+            st, res = client.save_job(job_id=clean_ids[0], token=token)
+            return {"status_code": st, "result": res}
+        st, res = client.batch_save_jobs(job_ids=clean_ids, token=token)
+        return {"status_code": st, "result": res}
+
+    elif action == "unsave":
+        results = []
+        for jid in clean_ids:
+            st, res = client.unsave_job(job_id=jid, token=token)
+            results.append({"job_id": jid, "status_code": st, "result": res})
+        return {"status_code": 200, "result": results}
+
+    elif action == "follow_up":
+        if len(clean_ids) == 1:
+            st, res = client.do_follow_up(job_id=clean_ids[0], token=token)
+            return {"status_code": st, "result": res}
+        st, res = client.batch_follow_up(job_ids=clean_ids, token=token)
+        return {"status_code": st, "result": res}
+
+    return {"status_code": 400, "error": f"Unknown action: '{action}'"}
+
+
+@mcp.tool()
+def manage_account(
+    action: Literal["get_settings", "update_settings", "list_blocked", "block_company", "unblock_company", "suggest"] = "get_settings",
+    company_id: Optional[Union[int, str]] = None,
+    settings: Optional[Dict[str, Any]] = None,
+    query: Optional[str] = None,
+    category: Optional[Literal["company", "institute"]] = "company",
+    token: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Manage account settings, employer privacy (blocking competitors), and autocomplete suggestions.
+    Args:
+        action: 'get_settings' (view preferences), 'update_settings' (update preferences),
+                'list_blocked' (view blocked companies), 'block_company' (block employer ID),
+                'unblock_company' (unblock employer ID), 'suggest' (autocomplete company/institute)
+        company_id: Company ID to block or unblock
+        settings: Settings dictionary to update (when action='update_settings')
+        query: Search string for autocompletion (when action='suggest')
+        category: 'company' or 'institute' (when action='suggest')
+    """
+    if action == "get_settings":
+        st, res = client.get_user_settings(token=token)
+        return {"status_code": st, "result": res}
+
+    elif action == "update_settings":
+        if not settings:
+            return {"status_code": 400, "error": "settings dictionary is required for update_settings"}
+        st, res = client.update_user_settings(settings=settings, token=token)
+        return {"status_code": st, "result": res}
+
+    elif action == "list_blocked":
+        st, res = client.get_blocked_companies(token=token)
+        return {"status_code": st, "result": res}
+
+    elif action in ("block_company", "unblock_company"):
+        if not company_id:
+            return {"status_code": 400, "error": f"company_id is required for {action}"}
+        st, res = client.block_or_unblock_company(
+            company_id=company_id,
+            block=(action == "block_company"),
+            token=token
+        )
+        return {"status_code": st, "result": res}
+
+    elif action == "suggest":
+        if not query:
+            return {"status_code": 400, "error": "query string is required for suggest"}
+        if category == "institute":
+            st, res = client.suggest_institutes(query=query, token=token)
+        else:
+            st, res = client.suggest_companies(query=query, token=token)
+        return {"status_code": st, "result": res}
+
+    return {"status_code": 400, "error": f"Unknown action: '{action}'"}
+
+
+@mcp.tool()
+def manage_session(
+    action: Literal["validate", "refresh"] = "validate",
+    token: Optional[str] = None,
+    phpsessid: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Session verification and token maintenance for Hirist.
+    Args:
+        action: 'validate' (check authentication & get candidate seekerId),
+                'refresh' (manually renew 30-day JWT using PHPSESSID)
+        token: Optional override token
+        phpsessid: Optional override PHPSESSID
+    """
+    if action == "refresh":
+        new_token, psess = auth.refresh_hirist_token(phpsessid_override=phpsessid, token_override=token)
+        if new_token:
+            return {
+                "status_code": 200,
+                "status": "success",
+                "message": "Token refreshed successfully",
+                "token": new_token,
+                "phpsessid": psess
+            }
+        return {
+            "status_code": 400,
+            "status": "failed",
+            "message": "Failed to refresh token. Check if PHPSESSID is valid."
+        }
+
+    status, res = client.validate_session(token=token)
     return {"status_code": status, "result": res}
 
 
