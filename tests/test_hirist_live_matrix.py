@@ -2,7 +2,6 @@
 Live matrix test for all 6 tools and their parameter variations in hirist_mcp.
 """
 import sys
-import os
 from pathlib import Path
 
 # Ensure paths

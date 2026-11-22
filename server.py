@@ -212,14 +212,14 @@ def manage_profile(
                 errors.append({"section": "skills", "error": res})
 
         if experience is not None:
-            st, res = client.update_work_experience(experience_list=experience, token=token)
+            st, res = client.update_work_experience(experiences=experience, token=token)
             if st == 200:
                 updates_performed.append("work_experience")
             else:
                 errors.append({"section": "work_experience", "error": res})
 
         if education is not None:
-            st, res = client.update_education(education_list=education, token=token)
+            st, res = client.update_education(educations=education, token=token)
             if st == 200:
                 updates_performed.append("education")
             else:

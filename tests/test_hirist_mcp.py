@@ -11,7 +11,7 @@ if workspace_dir not in sys.path:
 import unittest
 import base64
 from hirist_mcp.server import mcp
-from hirist_mcp import client, auth
+from hirist_mcp import auth
 
 
 class TestHiristMCP(unittest.TestCase):

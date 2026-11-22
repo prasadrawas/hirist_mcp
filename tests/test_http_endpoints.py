@@ -10,7 +10,7 @@ if workspace_dir not in sys.path:
 
 import unittest
 from starlette.testclient import TestClient
-from hirist_mcp.server import app, SESSION_STORE, current_session_token
+from hirist_mcp.server import app
 
 
 class TestHttpEndpoints(unittest.TestCase):

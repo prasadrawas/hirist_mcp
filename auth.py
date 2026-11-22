@@ -3,7 +3,6 @@ Authentication and session management for hirist_mcp.
 Supports multi-tenant credential resolution (Query Parameter -> HTTP Header -> Tool Argument -> Environment Variable -> .env).
 """
 import os
-import sys
 import json
 import base64
 import time
