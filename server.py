@@ -189,7 +189,7 @@ def manage_profile(
     elif action == "get_resume":
         if extract_text:
             text_res = client.download_resume_text(max_pages=max_pages, token=token)
-            return {"status_code": 200 if "resume_text" in text_res else 400, "result": text_res}
+            return {"status_code": 200 if text_res.get("status") == "success" or "resume_text" in text_res else 400, "result": text_res}
         status, res = client.get_resume(token=token)
         return {"status_code": status, "result": res}
 
@@ -233,7 +233,7 @@ def manage_profile(
                 errors.append({"section": "additional_info", "error": res})
 
         if cover_letter is not None:
-            st, res = client.update_cover_letter(cover_letter=cover_letter, token=token)
+            st, res = client.update_cover_letter(coverletter=cover_letter, token=token)
             if st == 200:
                 updates_performed.append("cover_letter")
             else:
@@ -247,12 +247,14 @@ def manage_profile(
         }
 
     else:  # "get"
-        status, profile_v2 = client.get_full_profile_v2(token=token)
+        status, profile_data = client.get_profile(token=token)
+        if status != 200 or not profile_data:
+            status, profile_data = client.get_full_profile_v2(token=token)
         st_skills, skills_res = client.get_skills(token=token)
         st_resume, resume_res = client.get_resume(token=token)
 
         unified_profile = {
-            "profile": profile_v2 if status == 200 else None,
+            "profile": profile_data if status == 200 else None,
             "skills": skills_res if st_skills == 200 else None,
             "resume": resume_res if st_resume == 200 else None
         }
@@ -283,7 +285,7 @@ def search_jobs(
         size: Number of jobs to return (default: 20)
     """
     if not any([query, location, min_exp is not None, max_exp is not None, category_id]):
-        status, res = client.get_job_feed(page=page, size=size, token=token)
+        status, res = client.get_job_feed(token=token)
         return {"status_code": status, "mode": "feed", "result": res}
 
     status, res = client.search_jobs(

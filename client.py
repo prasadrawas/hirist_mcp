@@ -474,7 +474,7 @@ def search_jobs(
     if max_exp is not None:
         params["maxexp"] = max_exp
     if location:
-        params["loc"] = location
+        params["city"] = location
     if category_id:
         params["category"] = category_id
 
