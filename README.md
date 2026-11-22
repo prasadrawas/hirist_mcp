@@ -33,7 +33,7 @@ The Hirist MCP server has been engineered into a high-performance **6-Tool Archi
 
 | Tool | Action Options / Capabilities | Description |
 | :--- | :--- | :--- |
-| **`manage_profile`** | `action`: `"get"`, `"update"`, `"pulse"`, `"get_resume"`, `"upload_resume"` | Complete candidate profile lifecycle: view profile, update specific sections (personal details, skills, experience, education, bio, cover letter), bump recruiter search visibility pulse, and manage resumes. |
+| **`manage_profile`** | `action`: `"get"`, `"update"`, `"pulse"`, `"delete_item"`, `"get_resume"`, `"upload_resume"` | Complete candidate profile lifecycle: view profile, update specific sections (personal details, skills, experience, education, bio, cover letter), delete work experience or education records (`item_type`, `item_id`), bump recruiter search visibility pulse, and manage resumes. |
 | **`search_jobs`** | `query`, `location`, `min_exp`, `max_exp`, `category_id`, `page`, `size` | Discover tech openings. If query and filters are omitted, automatically returns your personalized **Job Feed**. Otherwise, executes full parametric search. |
 | **`get_job_details`** | `job_ids`: `Union[int, List[int]]`, `include_assessment`: `bool` | Comprehensive inspection for single or multiple jobs. Returns full JD, skills tags, recruiter info, and automatically embeds screening questionnaire questions if required. |
 | **`manage_job_pipeline`** | `action`: `"apply"`, `"save"`, `"unsave"`, `"follow_up"`, `"metrics"` | Complete application pipeline: submit applications (single or batch with safe 200ms spacing), bookmark/save jobs, un-bookmark, send recruiter follow-ups, and fetch application statistics. |

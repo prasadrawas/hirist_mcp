@@ -33,7 +33,7 @@ mcp = FastMCP(
         "Hirist MCP Server (Unified 6-Tool Architecture): Production MCP server for Hirist.tech candidate profile "
         "management, smart tech job discovery, applications, recruiter follow-ups, and employer privacy.\n\n"
         "CORE TOOLS (Total 6 Tools):\n"
-        "1. `manage_profile`: Candidate profile reads, section updates (skills, bio, experience, education), resume management, and recruiter activity pulse.\n"
+        "1. `manage_profile`: Candidate profile reads, section updates (skills, bio, experience, education), delete profile items, resume management, and recruiter activity pulse.\n"
         "2. `search_jobs`: Search tech jobs by keywords/location or retrieve your personalized Job Feed (when no query is given).\n"
         "3. `get_job_details`: Inspect single or multiple job descriptions, tech stack tags, recruiter profiles, and screening questions.\n"
         "4. `manage_job_pipeline`: Apply to jobs (single or batch), bookmark/un-bookmark jobs, follow up with recruiters, and fetch application statistics.\n"
@@ -102,7 +102,7 @@ async def index_route(request: Request) -> Response:
     <span class="badge">Running</span>
     <h1>Hirist MCP Server</h1>
     <p>Production Model Context Protocol (MCP) server providing automated tools for Hirist.tech candidate profile management, recruiter visibility optimization, and smart tech job applications.</p>
-    
+
     <div class="card">
         <h3>Connect to Claude Web / Claude Desktop / Gemini / Cursor</h3>
         <p>Add this server to your MCP configuration with your personalized SSE or Streamable HTTP URL:</p>
@@ -147,7 +147,9 @@ async def index_route(request: Request) -> Response:
 
 @mcp.tool()
 def manage_profile(
-    action: Literal["get", "update", "pulse", "get_resume", "upload_resume"] = "get",
+    action: Literal["get", "update", "pulse", "delete_item", "delete_experience", "delete_education", "get_resume", "upload_resume"] = "get",
+    item_type: Optional[str] = None,
+    item_id: Optional[Union[int, str]] = None,
     personal: Optional[Dict[str, Any]] = None,
     skills: Optional[List[str]] = None,
     experience: Optional[List[Dict[str, Any]]] = None,
@@ -161,14 +163,17 @@ def manage_profile(
 ) -> Dict[str, Any]:
     """
     Candidate profile management: view profile, update career details/skills,
-    boost recruiter search ranking via activity pulse, and manage resumes.
+    delete work experience or education records, boost recruiter search ranking via activity pulse, and manage resumes.
     Args:
         action: 'get' (view full profile), 'update' (modify provided fields), 'pulse' (bump recruiter activity timestamp),
+                'delete_item' / 'delete_experience' / 'delete_education' (remove a work history or education item by ID),
                 'get_resume' (fetch resume metadata and optionally extracted text), 'upload_resume' (upload local PDF/DOCX)
+        item_type: Section type for 'delete_item': 'work_experience' ('employments'/'we'), 'education' ('ed'), 'course' ('co')
+        item_id: Unique record ID to delete (e.g. 5629998)
         personal: Personal details to update (designation, company, exp_year, exp_month, current_ctc, expected_ctc,
                   notice_period, location, phone, linkedin, name, etc.)
         skills: List of key skill strings (e.g. ['Python', 'FastAPI', 'Docker'])
-        experience: List of work experience records to add/update
+        experience: List of work experience records to add/update (or pass status=0 / delete=True on individual items)
         education: List of education records to add/update
         additional_info: Additional profile fields (about summary, github, linkedin, handle_team, career_break)
         cover_letter: Default cover letter text
@@ -176,7 +181,25 @@ def manage_profile(
         extract_text: If True when calling 'get_resume', downloads and parses resume PDF text
         max_pages: Maximum pages to extract when extract_text=True (default: 10)
     """
-    if action == "pulse":
+    if action in ("delete_item", "delete_experience", "delete_education"):
+        if not item_id:
+            return {"status_code": 400, "error": "item_id is required for deleting profile items"}
+        resolved_type = item_type
+        if not resolved_type:
+            if action == "delete_education":
+                resolved_type = "education"
+            else:
+                resolved_type = "work_experience"
+        status, res = client.delete_profile_item(item_type=resolved_type, item_id=item_id, token=token)
+        return {
+            "status_code": status,
+            "action": "delete_item",
+            "item_type": resolved_type,
+            "item_id": item_id,
+            "result": res
+        }
+
+    elif action == "pulse":
         status, res = client.touch_profile_pulse(token=token)
         return {"status_code": status, "result": res}
 

@@ -52,11 +52,12 @@ def run_tests():
     run_case("manage_session: validate", server.manage_session, action="validate")
     run_case("manage_session: refresh", server.manage_session, action="refresh")
 
-    # 2. manage_profile: get, pulse, resume
+    # 2. manage_profile: get, pulse, resume, delete_item
     run_case("manage_profile: get", server.manage_profile, action="get")
     run_case("manage_profile: pulse", server.manage_profile, action="pulse")
     run_case("manage_profile: get_resume metadata", server.manage_profile, action="get_resume", extract_text=False)
     run_case("manage_profile: get_resume extract_text", server.manage_profile, action="get_resume", extract_text=True, max_pages=2)
+    run_case("manage_profile: delete_item (education validation)", server.manage_profile, action="delete_item", item_type="education", item_id=999999999)
 
     # 2b. manage_profile: update
     # Get current profile to avoid damaging data

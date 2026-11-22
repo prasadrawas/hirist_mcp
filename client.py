@@ -312,19 +312,84 @@ def update_work_experience(
     formatted_list = []
     for exp in experiences:
         item = dict(exp)
-        if "status" not in item:
-            item["status"] = 1
-        item_keys = [field_map[k] for k in item if k in field_map]
-        item["infoString"] = "".join(sorted(item_keys))
-        item["requiredString"] = ""
+        if item.get("delete") is True or item.get("status") == 0:
+            item["status"] = 0
+            item["infoString"] = "g6"
+            item["requiredString"] = ""
+            item.pop("delete", None)
+        else:
+            if "status" not in item:
+                item["status"] = 1
+            item_keys = [field_map[k] for k in item if k in field_map]
+            item["infoString"] = "".join(sorted(item_keys))
+            item["requiredString"] = ""
         formatted_list.append(item)
 
-    return execute_request(
+    status, res = execute_request(
         f"{USER_BASE_URL}/profile/v2",
         method="POST",
         token=token,
         data={"we": formatted_list}
     )
+    if status == 200:
+        CACHE.invalidate("profile")
+    return status, res
+
+
+def delete_profile_item(
+    item_type: str,
+    item_id: Union[int, str],
+    token: Optional[str] = None
+) -> Tuple[int, Dict[str, Any]]:
+    """
+    Delete a specific profile item (work experience 'we'/'employments', education 'ed', course 'co') by ID.
+    Sends status=0 with schema-mapped infoString (we='g6', ed='h1', co='h2') against /user/profile/v2.
+    """
+    clean_type = (item_type or "").lower().strip()
+    type_map = {
+        "we": ("we", "g6"),
+        "work_experience": ("we", "g6"),
+        "experience": ("we", "g6"),
+        "experiences": ("we", "g6"),
+        "employments": ("we", "g6"),
+        "employment": ("we", "g6"),
+        "ed": ("ed", "h1"),
+        "education": ("ed", "h1"),
+        "educations": ("ed", "h1"),
+        "co": ("co", "h2"),
+        "course": ("co", "h2"),
+        "courses": ("co", "h2"),
+        "certification": ("co", "h2"),
+        "certifications": ("co", "h2"),
+    }
+
+    if clean_type not in type_map:
+        return 400, {
+            "error": f"Unsupported item_type '{item_type}'. Supported: 'work_experience' ('employments'), 'education', 'course'",
+            "statusCode": 400
+        }
+
+    section_key, info_code = type_map[clean_type]
+    clean_id = int(item_id) if str(item_id).isdigit() else item_id
+
+    payload = {
+        section_key: [{
+            "id": clean_id,
+            "status": 0,
+            "infoString": info_code,
+            "requiredString": ""
+        }]
+    }
+
+    status, res = execute_request(
+        f"{USER_BASE_URL}/profile/v2",
+        method="POST",
+        token=token,
+        data=payload
+    )
+    if status == 200:
+        CACHE.invalidate("profile")
+    return status, res
 
 
 def update_education(
@@ -339,19 +404,28 @@ def update_education(
     formatted_list = []
     for edu in educations:
         item = dict(edu)
-        if "status" not in item:
-            item["status"] = 1
-        item_keys = [field_map[k] for k in item if k in field_map]
-        item["infoString"] = "".join(sorted(item_keys))
-        item["requiredString"] = ""
+        if item.get("delete") is True or item.get("status") == 0:
+            item["status"] = 0
+            item["infoString"] = "h1"
+            item["requiredString"] = ""
+            item.pop("delete", None)
+        else:
+            if "status" not in item:
+                item["status"] = 1
+            item_keys = [field_map[k] for k in item if k in field_map]
+            item["infoString"] = "".join(sorted(item_keys))
+            item["requiredString"] = ""
         formatted_list.append(item)
 
-    return execute_request(
+    status, res = execute_request(
         f"{USER_BASE_URL}/profile/v2",
         method="POST",
         token=token,
         data={"ed": formatted_list}
     )
+    if status == 200:
+        CACHE.invalidate("profile")
+    return status, res
 
 
 def update_additional_info(

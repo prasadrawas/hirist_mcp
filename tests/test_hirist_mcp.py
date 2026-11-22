@@ -66,6 +66,17 @@ class TestHiristMCP(unittest.TestCase):
         self.assertIsNone(cache.get("prefix_b"))
         self.assertEqual(cache.get("other"), "val_other")
 
+    def test_delete_profile_item_unsupported_type(self):
+        from hirist_mcp import client, server
+        st, res = client.delete_profile_item("unsupported_section", 12345)
+        self.assertEqual(st, 400)
+        self.assertIn("error", res)
+
+        # server action requires item_id
+        res_server = server.manage_profile(action="delete_item")
+        self.assertEqual(res_server.get("status_code"), 400)
+        self.assertIn("item_id is required", res_server.get("error", ""))
+
 
 if __name__ == "__main__":
     unittest.main()
